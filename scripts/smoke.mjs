@@ -1,0 +1,761 @@
+/**
+ * dsh-context-compass — smoke test.
+ *
+ * Drives the built lib/ with stub services: projection fold over synthetic
+ * events, the shared assess() core, the /compass command handler, and the
+ * context_compass tool execute. Run after `npm run build`.
+ *
+ *   npm run build && npm run smoke
+ */
+import assert from 'node:assert/strict'
+import { sessionHealthProjectionDefinition, applyHealthEvent, healthView } from '../lib/projection.js'
+import { cacheHitRateOf } from '../lib/usage.js'
+import { assess } from '../lib/assess.js'
+import { healthCommandDefinition, buildCommandText } from '../lib/command.js'
+import { sessionHealthTool } from '../lib/tool.js'
+import { resolveConfig } from '../lib/config.js'
+import { PriceCache, periodAt, staticPricing } from '../lib/pricing.js'
+import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, handleOverviewRpc } from '../lib/overview.js'
+
+let failures = 0
+async function check(name, fn) {
+  try {
+    await fn()
+    console.log(`  ok  ${name}`)
+  } catch (err) {
+    failures++
+    console.error(`FAIL  ${name}\n      ${err.message}`)
+  }
+}
+
+/* ---------- projection fold ---------- */
+const config = resolveConfig({})
+// Economy floor isolated: fold scenarios stay under 50K so ratio tiers show.
+const ratioConfig = resolveConfig({ thresholds: { economyTokenFloor: 10_000_000 } })
+const fold = sessionHealthProjectionDefinition(ratioConfig)
+let state = fold.init()
+const events = [
+  { type: 'request/context', data: { contextWindow: 100_000 } },
+  { type: 'step/end', data: { turn: 1 } },
+  { type: 'step/end', data: { turn: 1 } }, // same turn: must not double count
+  { type: 'user/message', data: {} },
+  { type: 'assistant/message', data: { turn: 1, step: 1, usage: { inputTokens: 60_000, outputTokens: 500, cacheReadTokens: 300_000 } } },
+  { type: 'step/end', data: { turn: 2 } },
+  { type: 'user/message', data: {} },
+  { type: 'assistant/message', data: { turn: 2, step: 1 } },
+  { type: 'compaction/end', data: {} },
+  { type: 'assistant/chunk', data: { turn: 2, step: 1, chunk: { type: 'usage', usage: { inputTokens: 32_000, cacheReadTokens: 0 } } } },
+]
+for (const e of events) state = applyHealthEvent(state, e)
+
+await check('projection: fold counts (turns/messages/compactions)', () => {
+  assert.equal(state.turns, 2)
+  assert.equal(state.userMessages, 2)
+  assert.equal(state.assistantMessages, 2)
+  assert.equal(state.compactions, 1)
+  assert.equal(state.pressureTokens, 32_000) // last usage sample wins
+  assert.equal(state.contextWindow, 100_000)
+})
+
+await check('projection: fold keeps last-wins buckets only (rate lives in usage.ts)', () => {
+  // The fold no longer accumulates usage totals — the cache-hit rate is read
+  // from the core tokenUsage projection via cacheHitRateOf (one algorithm).
+  assert.equal(state.usageTotals, undefined)
+  assert.equal(state.usageWindow, undefined)
+  // Last-request buckets still feed the per-round money math.
+  assert.deepEqual(state.lastUsage, { inputTokens: 32_000, cacheReadTokens: 0, cacheWriteTokens: 0 })
+})
+
+await check('projection: blue severity at 32% occupancy', () => {
+  const view = healthView(state, ratioConfig)
+  assert.equal(view.severity, 'blue')
+  assert.equal(view.ratio, 0.32)
+  assert.ok(view.advice.includes('32%'))
+})
+
+await check('projection: severity tiers across thresholds', () => {
+  const base = { turns: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0 }
+  const viewOf = (pressure, window) => healthView(
+    { ...base, ...(pressure !== null ? { pressureTokens: pressure } : {}), ...(window !== null ? { contextWindow: window } : {}) },
+    ratioConfig, // economy floor raised: pure ratio tiers
+  )
+  assert.equal(viewOf(100_000, 1_000_000).severity, 'green')   // 10%
+  assert.equal(viewOf(350_000, 1_000_000).severity, 'blue')    // 35%
+  assert.equal(viewOf(600_000, 1_000_000).severity, 'yellow')  // 60%
+  assert.equal(viewOf(900_000, 1_000_000).severity, 'red')     // 90%
+})
+
+await check('projection: economy bills cache-discounted effective per round', () => {
+  const base = { turns: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0 }
+  const viewOf = (pressure, window, lastUsage) => healthView(
+    {
+      ...base,
+      ...(pressure !== null ? { pressureTokens: pressure } : {}),
+      ...(window !== null ? { contextWindow: window } : {}),
+      ...(lastUsage !== undefined ? { lastUsage } : {}),
+    },
+    config,
+  )
+  // No window: the absolute floor (50K) applies to the billable-equivalent.
+  assert.equal(viewOf(60_000, null, { inputTokens: 60_000, cacheReadTokens: 0, cacheWriteTokens: 0 }).severity, 'yellow')
+  assert.equal(viewOf(10_000, null, { inputTokens: 10_000, cacheReadTokens: 0, cacheWriteTokens: 0 }).severity, 'green')
+})
+
+await check('projection: economy floor scales with the window (no 15%-yellow)', () => {
+  const base = { turns: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0 }
+  const viewOf = (pressure, window, lastUsage) => healthView(
+    { ...base, ...(pressure !== null ? { pressureTokens: pressure } : {}), ...(window !== null ? { contextWindow: window } : {}), lastUsage },
+    config,
+  )
+  // 1M window → economy floor = max(50K, 0.3 × 1M) = 300K billable-equivalent.
+  // The old 50K floor fired at 10% occupancy; now 15% stays green (cached or not).
+  assert.equal(
+    viewOf(100_000, 1_000_000, { inputTokens: 100_000, cacheReadTokens: 0, cacheWriteTokens: 0 }).severity,
+    'green', // 10% occupancy, billable 100K < 300K
+  )
+  assert.equal(
+    viewOf(150_000, 1_000_000, { inputTokens: 15_000, cacheReadTokens: 135_000, cacheWriteTokens: 0 }).severity,
+    'green', // 15% occupancy, 90% cache hit → billable 28.5K < 300K
+  )
+  // Uncached at 32%: billable 320K ≥ 300K → economy outranks the blue tier.
+  const v = viewOf(320_000, 1_000_000, { inputTokens: 320_000, cacheReadTokens: 0, cacheWriteTokens: 0 })
+  assert.equal(v.severity, 'yellow')
+  assert.ok(v.advice.includes('已计缓存折扣'))
+})
+
+await check('projection: message-count proxy escalates green → blue', () => {
+  const base = {
+    turns: 40, lastTurn: null, userMessages: 500, assistantMessages: 500,
+    compactions: 0, pressureTokens: 20_000, contextWindow: 1_000_000,
+  }
+  const view = healthView(base, config) // 2% occupancy, 1000 messages ≥ 800 proxy
+  assert.equal(view.severity, 'blue')
+  assert.ok(view.advice.includes('代理指标'))
+  assert.ok(view.advice.includes('1000'))
+  const low = healthView({ ...base, userMessages: 400, assistantMessages: 300 }, config)
+  assert.equal(low.severity, 'green') // 700 messages: no proxy, low occupancy
+})
+
+await check('usage: cacheHitRateOf — single algorithm for every surface', () => {
+  // Same formula as the core input-bar stats line (cacheRead / (uncached +
+  // cacheRead + cacheWrite)), operating on the core tokenUsage totals.
+  assert.ok(Math.abs(cacheHitRateOf({ uncachedInputTokens: 350_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 }) - 500_000 / 850_000) < 1e-9)
+  // cacheWrite counts in the denominator, exactly like the core stats line.
+  assert.ok(Math.abs(cacheHitRateOf({ uncachedInputTokens: 100_000, cacheReadTokens: 400_000, cacheWriteTokens: 200_000 }) - 400_000 / 700_000) < 1e-9)
+  // Nothing billed → null; absent projection → null.
+  assert.equal(cacheHitRateOf({ uncachedInputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 }), null)
+  assert.equal(cacheHitRateOf(undefined), null)
+})
+
+await check('projection: per-round cost math (token + USD) — cacheHitRate no longer carried', () => {
+  const state2 = {
+    turns: 1, lastTurn: 1, userMessages: 1, assistantMessages: 1, compactions: 0,
+    pressureTokens: 550_000, contextWindow: 1_000_000,
+    lastUsage: { inputTokens: 50_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 },
+  }
+  const v = healthView(state2, config) // cacheHitDiscount 0.1, inputPricePerM 0.28
+  assert.equal(v.cacheHitRate, undefined) // rate lives in src/usage.ts off the core tokenUsage projection
+  assert.equal(v.uncachedInputTokens, 50_000)
+  assert.equal(v.cacheReadTokens, 500_000)
+  assert.equal(v.effectivePerRound, 50_000 + 500_000 * 0.1) // 100K billable-equivalent
+  assert.ok(Math.abs(v.effectivePerRoundUsd - (100_000 * 0.28) / 1_000_000) < 1e-9) // $0.028/轮
+  const empty = healthView({ ...state2, lastUsage: undefined }, config)
+  assert.equal(empty.effectivePerRound, null)
+  assert.equal(empty.effectivePerRoundUsd, null)
+})
+
+/* ---------- assess() core ---------- */
+const signal = new AbortController().signal
+const session = { header: { cwd: '/tmp/ws' } }
+const queryEvents = [
+  { type: 'turn/start', data: {} },
+  { type: 'user/message', data: {} },
+  { type: 'assistant/message', data: {} },
+  { type: 'turn/start', data: {} },
+  { type: 'user/message', data: {} },
+]
+const services = {
+  tokenMeter: { measure: () => ({ totalTokens: 300_000 }) },
+  llm: { resolveModelInfo: async () => ({ context: { contextWindow: 1_000_000 } }) },
+  agentDefaultModel: { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-v4-flash' }) },
+  sessionQuery: { listEvents: async () => queryEvents },
+  sandboxPolicy: { workspaceRoot: '/tmp/ws' },
+  fs: {
+    resolve: async p => p,
+    stat: async p => (p === '.git' || p === 'HANDOFF.md' ? {} : undefined),
+  },
+  subprocess: undefined,
+  // Projection snapshot: uncached 300K/round on a 1M window — billable 300K
+  // hits the window-scaled economy floor (max(50K, 0.3×1M)), yellow.
+  sessionProjections: {
+    snapshot: () => ({
+      values: {
+        sessionHealth: {
+          severity: 'yellow', advice: 'a', ratio: 0.3, total: 300_000, window: 1_000_000,
+          turns: 2, userMessages: 2, assistantMessages: 1, compactions: 0,
+          uncachedInputTokens: 300_000, cacheReadTokens: 0,
+          effectivePerRound: 300_000, effectivePerRoundUsd: 0.084, effectivePerRoundCny: null, pricePeriod: null,
+        },
+        // Core tokenUsage projection — the cache-hit rate's single data source.
+        tokenUsage: { uncachedInputTokens: 300_000, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      },
+    }),
+  },
+}
+const ctx = { get: name => services[name] }
+
+await check('assess: economy yellow + probes + counts', async () => {
+  const report = await assess(ctx, session, 'agent-1', signal, config, { docName: 'HANDOFF.md' })
+  assert.equal(report.severity, 'yellow') // billable 300K >= max(50K, 0.3×1M) economy floor
+  assert.equal(report.signals.turns, 2)
+  assert.equal(report.signals.userMessages, 2)
+  assert.equal(report.signals.total, 300_000)
+  assert.equal(report.handoff.isGitRepo, true)
+  assert.equal(report.handoff.hasHandoff, true)
+  assert.equal(report.recommendation, 'suggest-switch')
+  assert.ok(report.probes.some(p => p.includes('git 仓库')))
+  assert.ok(report.probes.some(p => p.includes('交接文档：已就位')))
+  assert.ok(report.probes.some(p => p.includes('缓存命中率 0%')))
+})
+
+await check('assess: danger-zone when work depends on unrecorded early content', async () => {
+  const report = await assess(ctx, session, 'agent-1', signal, config, {
+    dependsOnEarly: true,
+    earlyDecisionRecorded: false,
+  })
+  assert.equal(report.recommendation, 'danger-zone')
+  assert.ok(report.reason.includes('裸切'))
+})
+
+await check('assess: minimal skips probes', async () => {
+  const report = await assess(ctx, session, 'agent-1', signal, config, { minimal: true })
+  assert.ok(!report.probes.some(p => p.includes('git')))
+  assert.ok(!report.probes.some(p => p.includes('交接')))
+})
+
+/* ---------- git-state automation + cost expectation ---------- */
+const GIT_OUT = {
+  'status --short': ' M a.ts\n?? b.ts\n',
+  'log --oneline -1': '166f5ac feat: x\n',
+  'status -sb': '## main...origin/main [ahead 2]\n',
+}
+const gitCtx = {
+  get: name => (name === 'subprocess'
+    ? {
+      spawn: ({ argv }) => ({
+        done: Promise.resolve({ exitCode: 0 }),
+        collected: { stdout: { readFrom: () => ({ text: GIT_OUT[argv.slice(1).join(' ')] ?? '' }) } },
+      }),
+    }
+    : services[name]),
+}
+await check('assess: git worktree state automates the handoff checklist', async () => {
+  const report = await assess(gitCtx, session, 'agent-1', signal, config, {})
+  assert.equal(report.handoff.clean, false)
+  assert.equal(report.handoff.uncommittedCount, 2)
+  assert.equal(report.handoff.lastCommit, '166f5ac feat: x')
+  assert.ok(report.handoff.branchLine.includes('ahead 2'))
+  assert.ok(report.probes.some(p => p.includes('git 工作树：2 个未提交变更')))
+  const text = buildCommandText(report, { minimal: false })
+  assert.ok(text.includes('- [ ] 未提交变更：2 个'))
+  assert.ok(text.includes('- [ ] 已 push：## main...origin/main [ahead 2]'))
+})
+
+await check('assess: clean worktree marks the commit/push items done', async () => {
+  const cleanOut = { ...GIT_OUT, 'status --short': '' }
+  const cleanCtx = {
+    get: name => (name === 'subprocess'
+      ? {
+        spawn: ({ argv }) => ({
+          done: Promise.resolve({ exitCode: 0 }),
+          collected: { stdout: { readFrom: () => ({ text: cleanOut[argv.slice(1).join(' ')] ?? '' }) } },
+        }),
+      }
+      : services[name]),
+  }
+  const report = await assess(cleanCtx, session, 'agent-1', signal, config, {})
+  assert.equal(report.handoff.clean, true)
+  assert.equal(report.handoff.uncommittedCount, 0)
+  assert.ok(report.probes.some(p => p.includes('git 工作树：干净')))
+})
+
+await check('assess: cost expectation from cache-effective per-round', async () => {
+  const costCtx = {
+    get: name => {
+      if (name === 'sessionProjections') {
+        return {
+          snapshot: () => ({
+            values: {
+              sessionHealth: {
+                severity: 'yellow', advice: 'a', ratio: 0.13, total: 132_000, window: 1_000_000,
+                turns: 2, userMessages: 2, assistantMessages: 1, compactions: 0,
+                uncachedInputTokens: 13_200, cacheReadTokens: 118_800,
+                effectivePerRound: 25_080, // 13200 + 118800*0.1
+                effectivePerRoundUsd: (25_080 * 0.28) / 1_000_000, // $0.007/轮
+              },
+              tokenUsage: { uncachedInputTokens: 13_200, cacheReadTokens: 118_800, cacheWriteTokens: 0 },
+            },
+          }),
+        }
+      }
+      return services[name]
+    },
+  }
+  const report = await assess(costCtx, session, 'agent-1', signal, config, { remainingRounds: 10 })
+  assert.equal(report.signals.cacheHitRate, 0.9)
+  assert.equal(report.signals.effectivePerRound, 25_080)
+  assert.equal(report.signals.expectedTotalTokens, 250_800)
+  assert.equal(report.signals.inputPricePerM, 0.28)
+  assert.ok(report.signals.effectivePerRoundUsd !== null && Math.abs(report.signals.effectivePerRoundUsd - 0.0070224) < 1e-9)
+  assert.ok(report.signals.expectedTotalUsd !== null && Math.abs(report.signals.expectedTotalUsd - 0.070224) < 1e-9)
+  assert.ok(report.probes.some(p => p.includes('缓存命中率 90%')))
+  const text = buildCommandText(report, { minimal: false })
+  assert.ok(text.includes('- 缓存命中率 90%'))
+  assert.ok(text.includes('计费预期：约 $0.01/轮'), `got: ${text}`)
+  assert.ok(text.includes('剩余轮数输入费用预期 ≈ $0.07（约 251K token 计费当量）'))
+})
+
+/* ---------- pricing (official peak/valley document) ---------- */
+const OFFICIAL_DOC = {
+  source: 'https://api-docs.deepseek.com/quick_start/pricing/',
+  peakHours: [[9, 12], [14, 18]],
+  models: {
+    'deepseek-v4-flash': {
+      peak: { inputMissPerMCny: 3.0, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 },
+      offpeak: { inputMissPerMCny: 1.5, inputHitPerMCny: 0.05, inputMissPerMUsd: 0.22, inputHitPerMUsd: 0.007 },
+    },
+    '*': {
+      peak: { inputMissPerMCny: 3.0, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 },
+      offpeak: { inputMissPerMCny: 1.5, inputHitPerMCny: 0.05, inputMissPerMUsd: 0.22, inputHitPerMUsd: 0.007 },
+    },
+  },
+}
+
+await check('pricing: periodAt follows Beijing wall time', () => {
+  const hours = [[9, 12], [14, 18]]
+  // 2026-08-14T01:00Z = 09:00 Beijing (peak start, inclusive)
+  assert.equal(periodAt(hours, Date.parse('2026-08-14T01:00:00Z')), 'peak')
+  // 03:59Z = 11:59 Beijing (still peak)
+  assert.equal(periodAt(hours, Date.parse('2026-08-14T03:59:00Z')), 'peak')
+  // 04:00Z = 12:00 Beijing (peak over)
+  assert.equal(periodAt(hours, Date.parse('2026-08-14T04:00:00Z')), 'offpeak')
+  // 08:00Z = 16:00 Beijing (afternoon peak)
+  assert.equal(periodAt(hours, Date.parse('2026-08-14T08:00:00Z')), 'peak')
+  // 10:00Z = 18:00 Beijing (off-peak)
+  assert.equal(periodAt(hours, Date.parse('2026-08-14T10:00:00Z')), 'offpeak')
+})
+
+await check('pricing: auto refresh resolves model + period (peak/offpeak prices)', async () => {
+  const cache = new PriceCache(staticPricing(0.28, 0.1))
+  const fetchImpl = async () => ({ ok: true, json: async () => structuredClone(OFFICIAL_DOC) })
+  assert.equal(await cache.refresh('https://x', fetchImpl), true)
+  // Peak window (Beijing 9-12): 2026-08-14T01:00Z
+  const origNow = Date.now
+  Date.now = () => Date.parse('2026-08-14T01:00:00Z')
+  try {
+    const p = cache.get('deepseek-v4-flash')
+    assert.equal(p.missPerMCny, 3.0)
+    assert.equal(p.hitPerMCny, 0.10)
+    assert.equal(p.missPerMUsd, 0.44)
+    assert.equal(p.hitPerMUsd, 0.014)
+    assert.equal(p.period, 'peak')
+  } finally { Date.now = origNow }
+  // Off-peak: 2026-08-14T10:00Z
+  Date.now = () => Date.parse('2026-08-14T10:00:00Z')
+  try {
+    const p = cache.get('deepseek-v4-flash')
+    assert.equal(p.missPerMCny, 1.5)
+    assert.equal(p.hitPerMCny, 0.05)
+    assert.equal(p.missPerMUsd, 0.22)
+    assert.equal(p.period, 'offpeak')
+    // unknown model falls back to "*"
+    assert.equal(cache.get('some-other-model').missPerMCny, 1.5)
+  } finally { Date.now = origNow }
+})
+
+await check('pricing: failure keeps the last good price', async () => {
+  const cache = new PriceCache(staticPricing(0.28, 0.1))
+  const ok = async () => ({ ok: true, json: async () => structuredClone(OFFICIAL_DOC) })
+  await cache.refresh('https://x', ok)
+  const fail = async () => { throw new Error('offline') }
+  assert.equal(await cache.refresh('https://x', fail), false)
+  // Pin to Beijing off-peak: the get() period is wall-clock dependent, so an
+  // assertion on a concrete price must not run during 9-12 / 14-18 CST.
+  const origNow = Date.now
+  Date.now = () => Date.parse('2026-08-14T10:00:00Z')
+  try {
+    assert.equal(cache.get().missPerMCny, 1.5) // last good document survives
+  } finally { Date.now = origNow }
+})
+
+await check('pricing: refreshAny falls back to the second URL', async () => {
+  const cache = new PriceCache(staticPricing(0.28, 0.1))
+  const fail = async () => { throw new Error('primary down') }
+  const ok = async () => ({ ok: true, json: async () => structuredClone(OFFICIAL_DOC) })
+  assert.equal(await cache.refreshAny(['https://primary', 'https://fallback'], fail), false) // both down
+  assert.equal(cache.get().missPerMCny, null) // static fallback intact
+  assert.equal(
+    await cache.refreshAny(['https://primary', 'https://fallback'], url => (url.includes('fallback') ? ok() : fail())),
+    true,
+  )
+  // Same off-peak pin as above (peak hours would bill 3.0, not 1.5).
+  const origNow = Date.now
+  Date.now = () => Date.parse('2026-08-14T10:00:00Z')
+  try {
+    assert.equal(cache.get('deepseek-v4-flash').missPerMCny, 1.5) // fallback doc won
+  } finally { Date.now = origNow }
+})
+
+await check('pricing: invalid documents are rejected', async () => {
+  const cache = new PriceCache(staticPricing(0.28, 0.1))
+  for (const bad of [
+    { peakHours: [], models: { '*': OFFICIAL_DOC.models['*'] } },
+    { peakHours: [[9, 12]], models: {} },
+    { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: -1, inputHitPerMCny: 0.1, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
+    { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: 1, inputHitPerMCny: 0.1 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
+  ]) {
+    const fetchImpl = async () => ({ ok: true, json: async () => bad })
+    assert.equal(await cache.refresh('https://x', fetchImpl), false, JSON.stringify(bad))
+  }
+  assert.equal(cache.get().missPerMCny, null) // static fallback intact (USD only)
+})
+
+await check('projection: official pricing drives cny/usd money fields', () => {
+  const state3 = {
+    turns: 1, lastTurn: 1, userMessages: 1, assistantMessages: 1, compactions: 0,
+    pressureTokens: 550_000, contextWindow: 1_000_000,
+    lastUsage: { inputTokens: 50_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 },
+  }
+  // off-peak v4-flash: CNY miss 1.5 / hit 0.05, USD miss 0.22 / hit 0.007
+  // → discount 0.007/0.22 = 1/31.4; billable = 50K + 500K × (0.007/0.22)
+  const price = { missPerMUsd: 0.22, hitPerMUsd: 0.007, missPerMCny: 1.5, hitPerMCny: 0.05, period: 'offpeak' }
+  const v = healthView(state3, config, price)
+  const billable = 50_000 + 500_000 * (0.007 / 0.22)
+  assert.ok(Math.abs(v.effectivePerRound - billable) < 1e-6)
+  assert.ok(Math.abs(v.effectivePerRoundCny - (billable * 1.5) / 1e6) < 1e-9) // ¥0.10/轮
+  assert.ok(Math.abs(v.effectivePerRoundUsd - (billable * 0.22) / 1e6) < 1e-9) // $0.015/轮
+  assert.equal(v.pricePeriod, 'offpeak')
+})
+
+/* ---------- /compass command handler ---------- */
+const cmdDef = healthCommandDefinition(ctx, config)
+await check('command: full report text', async () => {
+  const result = await cmdDef.handler({ agent: { id: 'agent-1', session }, rawInput: '', signal })
+  assert.equal(result.kind, 'success')
+  assert.ok(result.text.includes('健康度：**黄**'))
+  assert.ok(result.text.includes('详情'))
+  assert.ok(result.text.includes('切换前检查'))
+})
+
+await check('command: minimal mode', async () => {
+  const result = await cmdDef.handler({ agent: { id: 'agent-1', session }, rawInput: 'minimal', signal })
+  assert.equal(result.kind, 'success')
+  assert.ok(result.text.includes('minimal 模式'))
+  assert.ok(!result.text.includes('git 仓库'))
+})
+
+await check('command: doc= parameter probes a user-named handoff file', async () => {
+  const result = await cmdDef.handler({ agent: { id: 'agent-1', session }, rawInput: 'doc=HANDOFF.md', signal })
+  assert.equal(result.kind, 'success')
+  assert.ok(result.text.includes('交接文档：已就位'))
+})
+
+await check('command: no session degrades to error', async () => {
+  const result = await cmdDef.handler({ agent: { id: 'agent-1', session: undefined }, rawInput: '', signal })
+  assert.equal(result.kind, 'error')
+})
+
+/* ---------- context_compass tool ---------- */
+const tool = sessionHealthTool(ctx, config)
+await check('tool: registers name + read kind', () => {
+  assert.equal(tool.name, 'context_compass')
+  assert.equal(tool.presentCall({ reason: 'x' }).kind, 'read')
+})
+
+await check('tool: execute returns structured verdict + report', async () => {
+  const value = await tool.execute({ reason: '自检', remainingRounds: 12 }, {
+    agent: { id: 'agent-1', session },
+    signal,
+  })
+  assert.equal(value.severity, 'yellow')
+  assert.equal(value.recommendation, 'suggest-switch')
+  assert.equal(value.signals.windowPercent, 30)
+  assert.equal(value.signals.tokensPerRound, 300_000)
+  assert.equal(value.signals.messageCount, 3) // 2 user + 1 assistant in the stub events
+  assert.equal(value.handoffReady.isGitRepo, true)
+  assert.ok(typeof value.report === 'string' && value.report.length > 0)
+})
+
+await check('tool: danger-zone recommendation surfaces for the model', async () => {
+  const value = await tool.execute({ dependsOnEarly: true }, {
+    agent: { id: 'agent-1', session },
+    signal,
+  })
+  assert.equal(value.recommendation, 'danger-zone')
+})
+
+await check('tool: render produces text from the canonical value', () => {
+  const blocks = tool.output.render({}, {
+    severity: 'yellow',
+    recommendation: 'suggest-switch',
+    summary: '建议在任务边界收尾',
+    report: '# 报告',
+    signals: {},
+    handoffReady: {},
+  })
+  assert.equal(blocks[0].type, 'text')
+  assert.ok(blocks[0].text.includes('# 报告'))
+})
+
+await check('tool: execute without session throws', async () => {
+  await assert.rejects(
+    () => tool.execute({}, { agent: undefined, signal }),
+    /无法定位当前会话/,
+  )
+})
+
+/* ---------- report text builder ---------- */
+await check('buildCommandText: blue tier wording', () => {
+  const text = buildCommandText({
+    severity: 'blue',
+    recommendation: 'continue-with-note',
+    summary: 'x',
+    reason: '上下文占用 42%（中等）——继续没问题，留意窗口压力。',
+    signals: { total: 420_000, window: 1_000_000, ratio: 0.42, turns: 8, userMessages: 10, assistantMessages: 9, compactions: 1 },
+    probes: [],
+    handoff: { isGitRepo: null, hasHandoff: null, runningProcesses: [] },
+  }, { minimal: false })
+  assert.ok(text.includes('健康度：**蓝**'))
+  assert.ok(text.includes('已压缩 1 次'))
+  assert.ok(!text.includes('切换前检查')) // blue: no switch checklist
+})
+
+/* ---------- multi-session overview (panel data + RPC) ---------- */
+const healthOf = (severity, extra = {}) => ({
+  severity,
+  advice: 'a',
+  ratio: null,
+  total: null,
+  window: null,
+  turns: 0,
+  userMessages: 0,
+  assistantMessages: 0,
+  compactions: 0,
+  uncachedInputTokens: null,
+  cacheReadTokens: null,
+  effectivePerRound: null,
+  effectivePerRoundUsd: null,
+  effectivePerRoundCny: null,
+  pricePeriod: null,
+  ...extra,
+})
+const overviewServices = {
+  sessionQuery: {
+    listSessions: async () => [
+      { header: { id: 'live-red', createdAt: 100 }, live: true, persisted: true },
+      { header: { id: 'cold-yellow', createdAt: 300 }, live: false, persisted: true },
+      { header: { id: 'cold-unknown', createdAt: 200 }, live: false, persisted: true },
+      { header: { id: 'live-green', createdAt: 400 }, live: true, persisted: true },
+    ],
+    readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `T-${id}` } } })),
+  },
+  sessions: { get: id => (id === 'live-red' || id === 'live-green' ? { header: { id } } : undefined) },
+  sessionProjections: {
+    snapshot: session => ({
+      values: {
+        sessionHealth: session.header.id === 'live-red'
+          ? healthOf('red', { ratio: 0.9, total: 900_000 })
+          : healthOf('green', { ratio: 0.05 }),
+      },
+    }),
+  },
+  sessionProjectionCache: {
+    cachedSnapshot: meta => meta.id === 'cold-yellow'
+      ? { values: { sessionHealth: healthOf('yellow', { ratio: 0.6 }) } }
+      : undefined,
+    coldSnapshot: async () => undefined, // cold-unknown stays null
+  },
+  sessionTitle: { get: () => undefined }, // force the batch title path
+}
+const overviewCtx = { get: name => overviewServices[name] }
+
+await check('overview: live snapshot / cache / cold fallback + titles + severity sort', async () => {
+  const rows = await buildOverview(overviewCtx, signal)
+  assert.equal(rows.length, 4)
+  // Red first, yellow second, green third, unknown last (host sort).
+  assert.deepEqual(rows.map(r => r.id), ['live-red', 'cold-yellow', 'live-green', 'cold-unknown'])
+  assert.equal(rows[0].health.severity, 'red')
+  assert.equal(rows[1].health.severity, 'yellow')
+  assert.equal(rows[2].health.severity, 'green')
+  assert.equal(rows[3].health, null) // cold + no cache row → null, never a crash
+  assert.equal(rows[0].live, true)
+  assert.equal(rows[1].live, false)
+  // Titles are background-filled (never awaited on first paint): first frame
+  // returns null; the dedicated title-cache check covers the fill+hit cycle.
+  assert.equal(rows[0].title, null)
+  assert.equal(rows[3].title, null)
+  assert.equal(rows[0].createdAt, 100)
+})
+
+await check('overview: same-tier rows sort newest-first', () => {
+  const rows = sortOverviewRows([
+    { id: 'a', title: null, live: false, createdAt: 100, health: healthOf('green') },
+    { id: 'b', title: null, live: false, createdAt: 400, health: healthOf('green') },
+    { id: 'c', title: null, live: false, createdAt: 200, health: healthOf('red') },
+  ])
+  assert.deepEqual(rows.map(r => r.id), ['c', 'b', 'a'])
+  assert.equal(rankOf(healthOf('red')), 0)
+  assert.equal(rankOf(healthOf('yellow')), 1)
+  assert.equal(rankOf(healthOf('blue')), 2)
+  assert.equal(rankOf(healthOf('green')), 3)
+  assert.equal(rankOf(null), 4)
+  assert.equal(rankOf(undefined), 4)
+})
+
+await check('overview: absent sessionQuery degrades to empty list', async () => {
+  assert.deepEqual(await buildOverview({ get: () => undefined }, signal), [])
+})
+
+await check('overview: top-level + archive filtering matches the sidebar', async () => {
+  // Subagent children and archived sessions are excluded everywhere; the
+  // cwd / workspace membership plays no role (sidebar shows all of them).
+  const wsServices = {
+    ...overviewServices,
+    workspaceRegistry: { archivedSessionIds: ['out'] },
+    sessionQuery: {
+      listSessions: async () => [
+        { header: { id: 'in-ws', createdAt: 1, cwd: '/ws' }, live: false, persisted: true },
+        { header: { id: 'in-ws-sub', createdAt: 2, cwd: '/ws/sub', origin: 'subagent' }, live: false, persisted: true },
+        { header: { id: 'out', createdAt: 3, cwd: '/other' }, live: false, persisted: true },
+        { header: { id: 'no-cwd', createdAt: 4 }, live: false, persisted: true },
+      ],
+      readTitleSnapshots: async () => [],
+    },
+  }
+  const rows = await buildOverview({ get: name => wsServices[name] }, signal)
+  assert.deepEqual(rows.map(r => r.id), ['no-cwd', 'in-ws']) // archived + subagent out, newest first
+})
+
+await check('overview: parallel cold loads backfill health', async () => {
+  const slowCtx = {
+    get: name => ({
+      ...overviewServices,
+      sessionProjectionCache: {
+        cachedSnapshot: () => undefined,
+        coldSnapshot: async id => {
+          await new Promise(resolve => setTimeout(resolve, 20))
+          return { values: { sessionHealth: healthOf('blue') } }
+        },
+      },
+      sessionQuery: {
+        listSessions: async () => [{ header: { id: 'cold-a', createdAt: 1 }, live: false, persisted: true }],
+        readTitleSnapshots: async () => [],
+      },
+    })[name],
+  }
+  const rows = await buildOverview(slowCtx, signal)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0].health.severity, 'blue') // async cold load backfilled
+})
+
+await check('overview: archived sessions are hidden everywhere', async () => {
+  const archivedCtx = {
+    get: name => ({
+      ...overviewServices,
+      workspaceRegistry: { archivedSessionIds: ['a2'] },
+      sessionQuery: {
+        listSessions: async () => [
+          { header: { id: 'a1', createdAt: 1, cwd: '/ws' }, live: false, persisted: true },
+          { header: { id: 'a2', createdAt: 2, cwd: '/ws' }, live: false, persisted: true },
+        ],
+        readTitleSnapshots: async () => [],
+      },
+    })[name],
+  }
+  const rows = await buildOverview(archivedCtx, signal)
+  assert.deepEqual(rows.map(r => r.id), ['a1'])
+})
+
+await check('overview: title cache — first frame null, background fill, next hit', async () => {
+  clearTitleCache()
+  const titleCtx = {
+    get: name => ({
+      ...overviewServices,
+      sessionQuery: {
+        listSessions: async () => [{ header: { id: 't1', createdAt: 1 }, live: false, persisted: true }],
+        readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `T-${id}` } } })),
+      },
+    })[name],
+  }
+  const first = await buildOverview(titleCtx, signal)
+  assert.equal(first.length, 1)
+  assert.equal(first[0].title, null) // cache miss: no log read on first paint
+  await new Promise(resolve => setTimeout(resolve, 50)) // background fill settles
+  const second = await buildOverview(titleCtx, signal)
+  assert.equal(second[0].title, 'T-t1') // cache hit on the next frame
+  clearTitleCache()
+})
+
+await check('overview: one broken record degrades that row only', async () => {
+  const brokenCtx = {
+    get: name => ({
+      ...overviewServices,
+      sessionProjections: { snapshot: () => { throw new Error('boom') } },
+      sessionProjectionCache: { cachedSnapshot: () => { throw new Error('boom') }, coldSnapshot: async () => { throw new Error('boom') } },
+    })[name],
+  }
+  const rows = await buildOverview(brokenCtx, signal)
+  assert.equal(rows.length, 4)
+  assert.ok(rows.every(r => r.health === null)) // per-record failures degrade, never throw
+})
+
+/* ---------- overview RPC handler ---------- */
+function fakeRes() {
+  const out = { status: null, headers: null, body: null }
+  return {
+    out,
+    writeHead: (status, headers) => { out.status = status; out.headers = headers },
+    end: body => { out.body = body },
+  }
+}
+function fakeReq(method, body, remoteAddress) {
+  const req = { method, socket: { remoteAddress } }
+  req[Symbol.asyncIterator] = async function* () { if (body !== undefined) yield body }
+  return req
+}
+
+await check('overview rpc: POST overview → 200 + sorted sessions', async () => {
+  const res = fakeRes()
+  await handleOverviewRpc(fakeReq('POST', JSON.stringify({ method: 'overview' }), '127.0.0.1'), res, overviewCtx)
+  assert.equal(res.out.status, 200)
+  const json = JSON.parse(res.out.body)
+  assert.equal(json.ok, true)
+  assert.deepEqual(json.result.sessions.map(r => r.id), ['live-red', 'cold-yellow', 'live-green', 'cold-unknown'])
+})
+
+await check('overview rpc: non-POST → 405', async () => {
+  const res = fakeRes()
+  await handleOverviewRpc(fakeReq('GET', undefined, '127.0.0.1'), res, overviewCtx)
+  assert.equal(res.out.status, 405)
+})
+
+await check('overview rpc: non-loopback peer → 403', async () => {
+  const res = fakeRes()
+  await handleOverviewRpc(fakeReq('POST', '{}', '10.0.0.5'), res, overviewCtx)
+  assert.equal(res.out.status, 403)
+})
+
+await check('overview rpc: malformed json → 400, unknown method → 400', async () => {
+  const bad = fakeRes()
+  await handleOverviewRpc(fakeReq('POST', '{nope', '127.0.0.1'), bad, overviewCtx)
+  assert.equal(bad.out.status, 400)
+  const unknown = fakeRes()
+  await handleOverviewRpc(fakeReq('POST', JSON.stringify({ method: 'nope' }), '127.0.0.1'), unknown, overviewCtx)
+  assert.equal(unknown.out.status, 400)
+})
+
+if (failures > 0) {
+  console.error(`\n${failures} check(s) FAILED`)
+  process.exit(1)
+}
+console.log('\nall smoke checks passed')
