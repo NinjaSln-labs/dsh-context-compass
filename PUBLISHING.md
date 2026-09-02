@@ -6,7 +6,7 @@
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.11.1`（latest，OIDC 发布，带 provenance）→ **0.11.2 待发**（修正默认定价 URL 指向新单库） |
+| npm | ✅ `dsh-context-compass@0.11.2`（latest，OIDC 发布，带 provenance）→ **0.11.3 待发**（罗盘一览 workspace 过滤补进源码） |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
 | 本地验证 | ⏳ 重启 `dsh web` + 硬刷新后验证一览面板 |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
@@ -14,6 +14,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.11.3** — **罗盘一览 workspace 过滤补进源码**（2026-09-03）：0.11.1 时代该过滤只手改在已安装 lib 上未进 src，CI 重建（0.11.2）时丢失，一览回到全部会话（17 个）；本版把「只显示有工作区归属的会话」写入 `src/overview.ts` 并重建。**澄清**：不镜像侧边栏的 blank 冷会话隐藏（那需逐会话 seq/投影读，且空会话显示为 no-data 行无碍）——见源码注释
 
 - **0.11.2** — **仓库规范化 + 默认定价 URL 修正**（2026-09-03，单库第二版）：补 LICENSE / CONTRIBUTING / SECURITY；`pricing/deepseek.json` 从 monorepo 迁入单库；src 默认 `priceUrl`/`priceFallbackUrl` 由旧 `dsh-plugins` 改指 `dsh-context-compass`（已发布 0.11.1 的默认 URL 仍指旧仓——本版修正）；README 双语相对链接 + 旧仓库引用清除；GitHub about/topics 设置
 

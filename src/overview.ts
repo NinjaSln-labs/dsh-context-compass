@@ -337,6 +337,10 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     // archived sessions stay out.
     if (rec.header.origin === 'subagent') continue
     if (archived !== null && archived.has(id)) continue
+    // Match sidebar: only show sessions that belong to a listed workspace.
+    // Without workspace mapping (headless/no registry), show all valid sessions.
+    const ws = workspaceBySession.get(id)
+    if (workspaceBySession.size > 0 && ws === undefined) continue
     const createdAt = typeof rec.header.createdAt === 'number' ? rec.header.createdAt : 0
 
     // Health value: live projection snapshot first, then the persisted cache
@@ -401,13 +405,22 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
       } catch { /* fall back to loaded/cold */ }
     }
 
+    // Note on "blank" cold sessions: the sidebar hides truly empty sessions
+    // (`session.seq === 0` / projection `sessionListMetadata.blank`), NOT
+    // sessions with a null title — a title is null on the first frame for any
+    // cold session until the async fill lands. We deliberately do not mirror
+    // the blank cut here: it would need a per-session seq/projection read (a
+    // cold-IO cost this first-frame path avoids), and an empty session shown
+    // as a no-data row is harmless. Workspace membership above is the
+    // sidebar-consistency cut that matters.
+
     rows.push({
       id,
       title,
       status,
       createdAt,
       health,
-      workspace: workspaceBySession.get(id) ?? null,
+      workspace: ws ?? null,
     })
   }
 
