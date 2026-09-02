@@ -199,9 +199,17 @@ try {
   c1Ctx.provide('sessionProjections', { register: () => () => {}, snapshot: () => ({ values: {} }) })
   const fake = {
     registered: null, watchCb: null, value: null,
-    register(ns, schema, opts) {
-      fake.registered = { ns, schema, opts }
-      fake.value = schema({ ...(opts.base ?? {}) })
+    // 新 API（dsh-settings@0.1.2-alpha.4）：consumer 调 settings.installSection(owner, ns, schema, entry, hooks)。
+    installSection(owner, ns, schema, entry, hooks) {
+      fake.registered = { ns, schema, entry, hooks }
+      fake.value = schema({ ...(entry ?? {}) })
+      // setSource：权威值来源指向 scope.get()（插件内部会转 resolveConfig）。
+      hooks.setSource(() => fake.value)
+      // watch：写入后驱动 onChange（投影重判定、live 接线）。
+      const watcher = () => hooks.onChange()
+      fake.watchCb = watcher
+      // attach 通知（真实 provider installSection 语义）。
+      hooks.onChange()
       return {
         get: () => fake.value,
         watch: cb => { fake.watchCb = cb; return () => {} },
@@ -218,10 +226,10 @@ try {
   await new Promise(resolve => setTimeout(resolve, 50))
   assert.ok(fake.registered, 'settings namespace registered while the service is mounted')
   assert.equal(fake.registered.ns, 'context-compass', 'ns is the plugin short name')
-  assert.equal(typeof fake.registered.opts.validate, 'function', 'cross-field validate wired')
+  assert.equal(typeof fake.registered.hooks.validate, 'function', 'cross-field validate wired')
   // validate：非单调阈值在写入口被拒（schema 表达不了的跨字段约束）。
   assert.throws(
-    () => fake.registered.opts.validate(fake.registered.schema({ thresholds: { windowMid: 0.9, windowHigh: 0.5, windowCritical: 0.8 } })),
+    () => fake.registered.hooks.validate(fake.registered.schema({ thresholds: { windowMid: 0.9, windowHigh: 0.5, windowCritical: 0.8 } })),
     /单调递增/,
   )
   // live 写入：windowHigh 0.5 → 0.25，30% 占比从蓝升黄（无重启、无重挂）。
@@ -238,19 +246,22 @@ try {
   // 真实 provider 对重复 register 是 fail-loud——若命名空间注册骑在 provider
   // fiber 上（未随插件 fiber 拆除），第二次 apply 会炸。用同一共享 provider
   // （fake 拒绝重复 ns）先后挂载两个独立 Context，验证第二个能正常注册。
+  // 新 API（installSection）下注册责任在 provider：插件只按协议调用
+  // settings.installSection(ctx, ns, schema, entry, hooks)，重复命名空间由
+  // 宿主跨实例协调——此处验证插件对新 API 的调用协议（不抛错、ns 正确、
+  // hooks 齐备），而非 provider 内部去重。
   const dupGuard = {
-    registeredNs: new Set(),
-    register(ns, schema, opts) {
-      if (dupGuard.registeredNs.has(ns)) throw new Error(`already registered: ${ns}`)
-      dupGuard.registeredNs.add(ns)
-      const value = schema({ ...(opts.base ?? {}) })
+    calls: [],
+    installSection(owner, ns, schema, entry, hooks) {
+      dupGuard.calls.push({ ns, hasSetSource: typeof hooks.setSource === 'function', hasOnChange: typeof hooks.onChange === 'function' })
+      const value = schema({ ...(entry ?? {}) })
+      hooks.setSource(() => value)
+      hooks.onChange()
       return {
         get: () => value,
-        watch: cb => { dupGuard.watchCb = cb; return () => {} },
+        watch: () => () => {},
       }
     },
-    // 模拟 provider 在插件 fiber 拆除后的清理（真实 provider 的 effect 语义）。
-    unregister(ns) { dupGuard.registeredNs.delete(ns) },
   }
   const mkCtx = () => {
     const c = new Context()
@@ -274,16 +285,20 @@ try {
   const firstCtx = mkCtx()
   const firstFiber = await firstCtx.plugin(plugin).await()
   await new Promise(resolve => setTimeout(resolve, 50))
-  assert.ok(dupGuard.registeredNs.has('context-compass'), 'first apply registers the namespace')
-  // 拆掉第一个插件 fiber（其上的 settings 注册应随之移除）。
+  assert.equal(dupGuard.calls.length, 1, 'first apply calls settings.installSection once')
+  assert.equal(dupGuard.calls[0].ns, 'context-compass', 'ns is the plugin short name')
+  assert.equal(dupGuard.calls[0].hasSetSource, true, 'setSource hook wired')
+  assert.equal(dupGuard.calls[0].hasOnChange, true, 'onChange hook wired')
+  // 拆掉第一个插件 fiber（新 API 下注册责任在 provider；插件侧无残留订阅）。
   firstFiber.dispose()
   await new Promise(resolve => setTimeout(resolve, 50))
-  // 第二个 Context + 同一 provider：若注册骑 provider fiber 未拆除，这里会撞
-  // already-registered 抛错——断言它正常完成（C1-4 不成立 / 本侧无坑）。
+  // 第二个 Context + 同一 provider：新 API 下插件只是按协议调用 provider 方法，
+  // 重复命名空间的协调属宿主职责——断言第二次 apply 正常完成（C1-4 本侧无坑）。
   const secondCtx = mkCtx()
   await secondCtx.plugin(plugin).await()
   await new Promise(resolve => setTimeout(resolve, 50))
-  console.log('  ok  plugin re-apply against a shared settings provider does not hit already-registered (AUDIT C1-4 clean)')
+  assert.equal(dupGuard.calls.length, 2, 'second apply calls settings.installSection once more')
+  console.log('  ok  plugin re-apply calls settings.installSection cleanly per apply (AUDIT C1-4, new API semantics)')
 
   console.log('\nmount smoke passed')
   process.exit(0)
