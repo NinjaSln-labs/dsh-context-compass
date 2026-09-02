@@ -63,11 +63,12 @@ jobs:
         # 依赖 public 源仓库。
         run: |
           npm install -g npm@latest
+          echo "npm version: $(npm --version)"
           VERSION="$(node -p "require('./package.json').version")"
           if [[ "$VERSION" == *-* ]]; then
             echo "canary prerelease $VERSION → dist-tag next"
-            npm publish --access public --tag next --provenance
+            npm publish --access public --tag next --provenance --loglevel verbose
           else
             echo "stable $VERSION → dist-tag latest"
-            npm publish --access public --provenance
+            npm publish --access public --provenance --loglevel verbose
           fi
