@@ -31,9 +31,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        # 注意：不加 registry-url。setup-node 的 registry-url 会写一个带占位
+        # _authToken 的 .npmrc（NODE_AUTH_TOKEN=XXXXX…），shadow 掉 OIDC 认证，
+        # 使 npm publish 走 token 路径而 E404。trusted publishing 纯靠
+        # id-token: write，无需 registry-url / NODE_AUTH_TOKEN。
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           cache: npm
           cache-dependency-path: package-lock.json
       - name: 'Guard: tag version matches package.json'
