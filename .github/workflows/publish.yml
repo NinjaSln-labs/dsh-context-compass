@@ -1,10 +1,11 @@
-# dsh-context-compass 发布工作流（人工审批门）
+# dsh-context-compass 发布工作流
 #
-# 安全模型：
+# 安全模型（2026-09 迁移 OIDC Trusted Publishing）：
 # - 触发 = 本机人工创建的 tag（context-compass-vX.Y.Z），发布决策永远是人的决定
-# - 权限最小化：workflow 仅 contents: read；NPM_TOKEN 只注入 publish 步骤的 env
-# - token = npm granular access token（仅授权 dsh-context-compass 包），存 GitHub secrets
-# - 审批门：environment `npm-publish` + required reviewers
+# - 认证：npm Trusted Publishing（OIDC）——npmjs.com 包设置里配置的 trusted
+#   publisher 只接受本仓库 publish.yml 的发布，免长期 token、自动 provenance
+#   （来源仓库须 public 才能生成 provenance）
+# - 权限最小化：contents: read + id-token: write（OIDC 签发所需）
 # - 版本一致性守卫：tag 版本必须与 package.json version 完全一致
 # - actions 按 SHA 固定
 name: publish
@@ -16,6 +17,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: npm-publish
@@ -24,7 +26,6 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    environment: npm-publish
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,15 +54,17 @@ jobs:
           npm run smoke
           npm run mount
           node scripts/client-mount.mjs
-      - name: Publish to npm
+      - name: Publish to npm (OIDC trusted publishing)
+        # 升级 npm：trusted publishing 需 npm CLI >= 11.5.1（含 OIDC 登录支持）。
+        # OIDC 认证由 id-token: write 提供，无需 NODE_AUTH_TOKEN；provenance
+        # 依赖 public 源仓库。
         run: |
+          npm install -g npm@latest
           VERSION="$(node -p "require('./package.json').version")"
           if [[ "$VERSION" == *-* ]]; then
             echo "canary prerelease $VERSION → dist-tag next"
-            npm publish --access public --tag next
+            npm publish --access public --tag next --provenance
           else
             echo "stable $VERSION → dist-tag latest"
-            npm publish --access public
+            npm publish --access public --provenance
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

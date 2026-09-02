@@ -9,12 +9,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/NinjaSln-labs/dsh-plugins.git",
-    "directory": "dsh-context-compass"
+    "url": "git+https://github.com/NinjaSln-labs/dsh-context-compass.git"
   },
-  "homepage": "https://github.com/NinjaSln-labs/dsh-plugins/tree/main/dsh-context-compass#readme",
+  "homepage": "https://github.com/NinjaSln-labs/dsh-context-compass#readme",
   "bugs": {
-    "url": "https://github.com/NinjaSln-labs/dsh-plugins/issues"
+    "url": "https://github.com/NinjaSln-labs/dsh-context-compass/issues"
   },
   "keywords": [
     "deepseek-harness",
