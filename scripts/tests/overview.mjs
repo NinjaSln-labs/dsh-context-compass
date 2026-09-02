@@ -237,6 +237,28 @@ export async function run() {
     clearTitleCache()
   })
 
+  await check('overview: blank cold session (no title event) hides on the frame AFTER the fill confirms it', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // 真空壳：日志 fold 后确认无标题事件（与侧边栏 blank 的 seq===0 语义一致——
+    // 只有 header 的日志不可能有标题）。
+    const blankCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessionQuery: {
+          listSessions: async () => [{ header: { id: 'b1', createdAt: 1 }, live: false, persisted: true }],
+          readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: undefined } })),
+        },
+      })[name],
+    }
+    const { rows: first } = await buildOverview(blankCtx, signal)
+    assert.equal(first.length, 1) // 首帧：fill 未落，不预先隐藏
+    await new Promise(resolve => setTimeout(resolve, 50)) // background fill settles → blankCache
+    const { rows: second } = await buildOverview(blankCtx, signal)
+    assert.equal(second.length, 0) // 确认无标题 → 冷会话隐藏（对齐侧边栏 blank cut）
+    clearTitleCache()
+  })
+
   await check('overview: one broken record degrades that row only', async () => {
     __resetOverviewCachesForTests()
     const brokenCtx = {

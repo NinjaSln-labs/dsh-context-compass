@@ -91,9 +91,20 @@ interface SessionsStoreLike {
 const titleCache = new Map<string, { title: string; at: number }>()
 const TITLE_TTL_MS = 60_000
 
-/** Forget the cache (tests / plugin re-apply). */
+/**
+ * Confirmed-blank sessions (sidebar "blank" cut): a cold session whose log was
+ * folded for a title and found none — i.e. a header-only (truly empty) log.
+ * Distinct from titleCache which only records sessions WITH a title. Rows are
+ * filtered on frames AFTER the background fill confirms the absence, so the
+ * first frame (fill still pending) never hides a session pre-emptively.
+ */
+const blankCache = new Map<string, number /* at */>()
+const BLANK_TTL_MS = 60_000
+
+/** Forget the caches (tests / plugin re-apply). */
 export function clearTitleCache(): void {
   titleCache.clear()
+  blankCache.clear()
 }
 
 /**
@@ -112,10 +123,20 @@ function scheduleTitleFill(ctx: Context, ids: string[], fillSignal: AbortSignal)
   const promise = (async () => {
     try {
       const observations = await sessionQuery.readTitleSnapshots(ids, controller.signal)
+      const now = Date.now()
       for (const o of observations) {
         if (o.status !== 'fulfilled') continue
         const t = o.value?.title?.title
-        if (typeof t === 'string' && t !== '') titleCache.set(o.sessionId, { title: t, at: Date.now() })
+        if (typeof t === 'string' && t !== '') {
+          titleCache.set(o.sessionId, { title: t, at: now })
+        } else {
+          // Confirmed no title: the fold read this session's log and found no
+          // title event. A cold session that will never have a title is the
+          // sidebar's "blank" cut (truly empty sessions — a header-only log).
+          // Record it so a LATER frame can hide it; THIS frame already showed
+          // it with title null while the fill was pending.
+          blankCache.set(o.sessionId, now)
+        }
       }
     } catch { /* next refresh retries */ }
   })()
@@ -405,14 +426,14 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
       } catch { /* fall back to loaded/cold */ }
     }
 
-    // Note on "blank" cold sessions: the sidebar hides truly empty sessions
-    // (`session.seq === 0` / projection `sessionListMetadata.blank`), NOT
-    // sessions with a null title — a title is null on the first frame for any
-    // cold session until the async fill lands. We deliberately do not mirror
-    // the blank cut here: it would need a per-session seq/projection read (a
-    // cold-IO cost this first-frame path avoids), and an empty session shown
-    // as a no-data row is harmless. Workspace membership above is the
-    // sidebar-consistency cut that matters.
+    // Blank (truly empty) cold sessions are hidden from the sidebar
+    // (`session.seq === 0` / projection `sessionListMetadata.blank`). Mirror
+    // that cut via the background title fold: a session confirmed to have no
+    // title event is a header-only log. The confirmation lands on a LATER
+    // frame (blankCache populated after the async fill), so a first-frame
+    // session — title still pending — is never hidden pre-emptively.
+    const blankAt = blankCache.get(id)
+    if (status === 'cold' && blankAt !== undefined && now - blankAt < BLANK_TTL_MS) continue
 
     rows.push({
       id,
