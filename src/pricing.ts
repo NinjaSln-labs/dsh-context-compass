@@ -3,7 +3,7 @@
  *
  * Money display needs input prices. The harness carries none, so the plugin
  * resolves them through a live cache driven by the OFFICIAL DeepSeek pricing
- * document (the default `priceUrl` is the dsh-plugins repo's
+ * document (the default `priceUrl` is this repo's
  * `pricing/deepseek.json`, synced from api-docs.deepseek.com/quick_start/pricing):
  * - peak/off-peak periods are evaluated against BEIJING wall time on every
  *   read (DeepSeek peak hours 9–12 and 14–18 Beijing; everything else is

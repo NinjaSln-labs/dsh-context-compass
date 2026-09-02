@@ -79,7 +79,7 @@ export interface CostConfig {
   priceSource: 'auto' | 'static'
   /**
    * Primary JSON pricing document URL for priceSource 'auto'. Default: the
-   * jsdelivr CDN mirror of the dsh-plugins repo's pricing/deepseek.json —
+   * jsdelivr CDN mirror of the dsh-context-compass repo's pricing/deepseek.json —
    * GitHub raw is unreachable on many CN networks and a failed fetch silently
    * degrades the whole money display to static USD (no CNY).
    */
@@ -137,8 +137,8 @@ export const Config: z<Config> = z.object({
     cacheHitDiscount: z.number().min(0).max(1).default(0.1),
     inputPricePerM: z.number().min(0).default(0.28),
     priceSource: z.union([z.const('auto'), z.const('static')]).default('auto'),
-    priceUrl: z.string().default('https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-plugins@main/pricing/deepseek.json'),
-    priceFallbackUrl: z.string().default('https://raw.githubusercontent.com/NinjaSln-labs/dsh-plugins/main/pricing/deepseek.json'),
+    priceUrl: z.string().default('https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json'),
+    priceFallbackUrl: z.string().default('https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json'),
     priceRefreshHours: z.number().min(1).max(24 * 30).default(24),
   }),
 })
@@ -240,8 +240,8 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     cacheHitDiscount: config.cost?.cacheHitDiscount ?? 0.1,
     inputPricePerM: config.cost?.inputPricePerM ?? 0.28,
     priceSource: config.cost?.priceSource ?? 'auto',
-    priceUrl: config.cost?.priceUrl ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-plugins@main/pricing/deepseek.json',
-    priceFallbackUrl: config.cost?.priceFallbackUrl ?? 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-plugins/main/pricing/deepseek.json',
+    priceUrl: config.cost?.priceUrl ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',
+    priceFallbackUrl: config.cost?.priceFallbackUrl ?? 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json',
     priceRefreshHours: config.cost?.priceRefreshHours ?? 24,
   }
   return { thresholds, checks, projection, cost }

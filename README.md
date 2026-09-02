@@ -1,9 +1,10 @@
 # dsh-context-compass
 
-[English](https://github.com/NinjaSln-labs/dsh-plugins/blob/main/dsh-context-compass/README.en.md) | 简体中文
+[English](README.en.md) | 简体中文（中文为准，英文翻译可能滞后）
 
 [![npm version](https://img.shields.io/npm/v/dsh-context-compass)](https://www.npmjs.com/package/dsh-context-compass)
-[![GitHub stars](https://img.shields.io/github/stars/NinjaSln-labs/dsh-plugins?style=social)](https://github.com/NinjaSln-labs/dsh-plugins)
+[![License](https://img.shields.io/npm/l/dsh-context-compass)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/NinjaSln-labs/dsh-context-compass?style=social)](https://github.com/NinjaSln-labs/dsh-context-compass)
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 的上下文罗盘插件：基于真实数据的「继续 vs 新开会话」指示器。
 
@@ -69,8 +70,8 @@ cost: {
   cacheHitDiscount: 0.1,       // 缓存命中价格比例
   inputPricePerM: 0.28,        // 静态兜底：USD / 1M 输入 token
   priceSource: 'auto',         // 'auto'：定期拉取；'static'：从不拉取
-  priceUrl: 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-plugins@main/pricing/deepseek.json',   // 主源（jsdelivr，CN 可达）
-  priceFallbackUrl: 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-plugins/main/pricing/deepseek.json', // 同轮回退（GitHub raw）
+  priceUrl: 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',   // 主源（jsdelivr，CN 可达）
+  priceFallbackUrl: 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json', // 同轮回退（GitHub raw）
   priceRefreshHours: 24,
 }
 ```
@@ -79,7 +80,7 @@ cost: {
 
 harness 不携带价格数据，金额显示通过实时缓存解析，数据源为**官方 DeepSeek 定价文档**
 （默认 `priceUrl` = jsdelivr CDN 镜像，`priceFallbackUrl` = GitHub raw 同轮回退；
-文档即本仓库维护的 [`pricing/deepseek.json`](../pricing/deepseek.json)，
+文档即本仓库维护的 [`pricing/deepseek.json`](pricing/deepseek.json)，
 与 [api-docs.deepseek.com](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 同步）。
 主源不可达时（如部分网络屏蔽 GitHub raw）自动回退，避免金额显示降级为静态 USD。
 
@@ -143,7 +144,7 @@ npm run visual:update  # 有意变更视觉后重写基线（visual/baselines/�
 
 ## ⭐ 支持
 
-如果这个插件对你有帮助，欢迎到 [GitHub 仓库](https://github.com/NinjaSln-labs/dsh-plugins) 点个 ⭐ Star——它是我持续维护的动力。也欢迎提 issue / PR 一起改进。
+如果这个插件对你有帮助，欢迎到 [GitHub 仓库](https://github.com/NinjaSln-labs/dsh-context-compass) 点个 ⭐ Star——它是我持续维护的动力。也欢迎提 issue / PR 一起改进。
 
 ## License
 
