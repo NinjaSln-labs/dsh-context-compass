@@ -1,25 +1,25 @@
 # 发布记录：dsh-context-compass
 
-**已发布**（GitHub + npm）：`dsh-context-compass@0.11.0`（npm latest；发版 tag `context-compass-v0.11.0` → `731f7bc`）· `dsh-knowledge-sqlite@0.1.2`（latest）。本包名首发于 0.6.0（CI run 31942773437）；旧名 `dsh-session-health` 已发布 deprecate 指令待网页操作。
+**2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-08-30 更新）
+## 发布状态（2026-09-03 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.11.0`（latest，CI 自动发布；0.6.0 首发时 run 31924069699）· `dsh-knowledge-sqlite@0.1.2`（latest） |
-| GitHub | ✅ `NinjaSln-labs/dsh-plugins` main = `e8d37fd`（2026-08-29）；发版 tag `context-compass-v0.11.0` → `731f7bc`（2026-08-27） |
-| 本地验证 | ⏳ 重启 `dsh web` + 硬刷新后验证一览面板（profile 当前为 file: 开发模式，重建自动同步） |
-| 双语文档 | ✅ README.md / README.en.md（含面板节） |
-
-**0.6.0 发布过程修复的两个 CI 坑**（`publish.yml` 首次成功跑通）：
-1. `npm ci` 需要 lockfile，但 `package-lock.json` 曾被 `.gitignore` 排除 → 入库（现坐标 `8b6e5e6`；原 `123168c` 为早期改写前坐标）
-2. setup-node `cache: npm` 在仓库根探测锁文件，`working-directory` 管不到 action → 显式 `cache-dependency-path: dsh-context-compass/package-lock.json`（现坐标同 `8b6e5e6` 时期工作流调整；原 `523c94e` 为早期改写前坐标）
+| npm | ✅ `dsh-context-compass@0.11.1`（latest，OIDC 发布，带 provenance）→ **0.11.2 待发**（修正默认定价 URL 指向新单库） |
+| GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
+| 本地验证 | ⏳ 重启 `dsh web` + 硬刷新后验证一览面板 |
+| 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
 
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
 
-- **0.11.0** — **AUDIT-0.10.0 修复批 + client 模块化拆分 + peer 升 0.1.1**（2026-08-27，tag → `731f7bc`）：审计修复批（`a73578e`）修 OV-1 空结果双连采信清空（幽灵列表自愈）、OV-2/3 `isLoopback` fail-closed + Host 头校验（防 DNS rebinding）、C1-1 settings 接线 try/catch 降级、C1-2 去重 pending inject、C1-3 validateConfig 全字段有限性、R1-1 采样按 (turn,step) 去重（stateVersion 10）、R1-2 不再泄漏「null%」、R1-3 压缩捕获失败失效陈旧比例、R1-4/5 sparkline aria 口径 + overflow 可见；client.tsx 1286 行单体拆为 `src/client/{styles,shared,badge,command-card,overview}`（`6584007`，slot 注册与 CSS 注入零变化、visual 基线不变）；peer 升 `^0.1.1-rc.2` + 适配 0.1.1 投影契约（`666ee8f`）、OV-5 抽共享排序模块收敛 host/client 双份实现（`7330d3d`）；S4 canary 发布通道（`f7b67c5`——git 上落在 0.10.0 tag 之后，ROADMAP 记在 0.10.0 段）。补测试：SWR 后台刷新独立 AbortController + 测试洞 3/4/5（重放等价性 / chunk 封顶 / compaction-chunk 交互）
+- **0.11.2** — **仓库规范化 + 默认定价 URL 修正**（2026-09-03，单库第二版）：补 LICENSE / CONTRIBUTING / SECURITY；`pricing/deepseek.json` 从 monorepo 迁入单库；src 默认 `priceUrl`/`priceFallbackUrl` 由旧 `dsh-plugins` 改指 `dsh-context-compass`（已发布 0.11.1 的默认 URL 仍指旧仓——本版修正）；README 双语相对链接 + 旧仓库引用清除；GitHub about/topics 设置
+
+- **0.11.1** — **dsh@0.1.2-alpha.4 适配 + 单库化**（2026-09-02，单库首版，tag → `context-compass-v0.11.1`）：settings API 从模块级 `installSettingsSection` 迁移到 `ctx.inject + settings.installSection`（dsh-settings@0.1.2-alpha.4 移除旧导出）；罗盘一览加 workspace 归属 + blank 冷会话过滤（与侧边栏一致）；**BREAKING**：不再兼容 dsh@<0.1.2-alpha.4（旧版用户用 0.11.0）；发布流程自 dsh-plugins monorepo 迁出为独立单库，认证迁移 OIDC Trusted Publishing
+
+- **0.11.0** — **AUDIT-0.10.0 修复批 + client 模块化拆分 + peer 升 0.1.1**（2026-08-27，monorepo 末版，tag → `731f7bc`）：审计修复批（`a73578e`）修 OV-1 空结果双连采信清空（幽灵列表自愈）、OV-2/3 `isLoopback` fail-closed + Host 头校验（防 DNS rebinding）、C1-1 settings 接线 try/catch 降级、C1-2 去重 pending inject、C1-3 validateConfig 全字段有限性、R1-1 采样按 (turn,step) 去重（stateVersion 10）、R1-2 不再泄漏「null%」、R1-3 压缩捕获失败失效陈旧比例、R1-4/5 sparkline aria 口径 + overflow 可见；client.tsx 1286 行单体拆为 `src/client/{styles,shared,badge,command-card,overview}`（`6584007`，slot 注册与 CSS 注入零变化、visual 基线不变）；peer 升 `^0.1.1-rc.2` + 适配 0.1.1 投影契约（`666ee8f`）、OV-5 抽共享排序模块收敛 host/client 双份实现（`7330d3d`）；S4 canary 发布通道（`f7b67c5`——git 上落在 0.10.0 tag 之后，ROADMAP 记在 0.10.0 段）。补测试：SWR 后台刷新独立 AbortController + 测试洞 3/4/5（重放等价性 / chunk 封顶 / compaction-chunk 交互）
 
 - **0.10.0** — **C1 host 配置点接入**（2026-08-26，tag → `5ec24ef`）：`installSettingsSection` source-thunk 模式，投影/工具/命令/RPC 四处 getter 化——**thresholds×8 / checks×5 / cost 显示项 live 生效**；`projection.enabled` 经 onChange 重判定 live 切换；`validate` 三档阈值单调写时拒绝；pricing 源 4 字段 restart；`resolveConfig` 降级为测试/回退路径（双源治愈）；peer 新增 `@deepseek-ai/dsh-settings ^0.1.0-rc.6`。**测试规模**：smoke 107 + mount 6 + client-mount 7 + visual 6（mount 集成测试抓到 `as` 强转压掉 thunk 未调用的真 bug）
 
