@@ -57,6 +57,7 @@
     "mount": "node scripts/mount.mjs",
     "release-check": "node scripts/release-check.mjs",
     "contract-check": "node scripts/contract-check.mjs",
+    "check:deploy": "node scripts/check-deploy.mjs",
     "visual": "playwright test -c visual/playwright.config.mjs",
     "visual:update": "playwright test -c visual/playwright.config.mjs --update-snapshots"
   },
