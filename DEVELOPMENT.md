@@ -156,6 +156,7 @@ git config core.hooksPath .githooks
 | registry 装的插件改了源码没发版 | 同版本号不同内容，行为错位、版本校验失效 | `pnpm check:deploy`（registry 差异 → FAIL）+ `.githooks/pre-commit` 硬拦截 + 插件级 AGENTS.md 规则内联 |
 | 罗盘一览与侧边栏会话数不一致 | 面板多出无工作区/空标题冷会话 | 一览走 workspaceRegistry 过滤 + blank 冷会话过滤（对齐 sidebar 数据源） |
 | blank 代理判定漂移（无标题≠blank，60s TTL 过期后空行闪现） | 面板比侧边栏多 1 行真空壳会话，重开面板首帧必闪现 | **0.11.5 方案 A**：blank 真值改从宿主聚合层 `sessionController.list()` 的 `sessionListMetadata.blank` 投影取（侧边栏渲染的就是这份列表）——挂载预热 + 请求帧 SWR 刷新，首帧即裁剪；代理路径仅作真值缺席时的降级 |
+| **宿主 Remote 返回形状没查契约就猜**（0.11.5 事故，方案 A 未生效） | 面板「看似对上」实未生效——`fetchBlankTruth` 按裸数组写 `Array.isArray`，但 `sessionController.list()` 真返回 `{ items: [...] }`（`SessionListValue`）→ 恒 false，真值图空，靠 legacy blankCache 掩盖，进程重启即露馅（16→6 闪现） | **0.11.6**：读 `result.items`（防御兼容两种形态）+ `list({}, signal)` 正确占位；测试 stub 按宿主真实 `{items}` 契约写（**切勿用裸数组 stub 掩盖契约形状**）；挂载预热 `warmBlankTruth` 带重试（service 晚挂载 → no-op 致首帧闪现） |
 
 ## 维护
 

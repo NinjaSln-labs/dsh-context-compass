@@ -6,16 +6,18 @@
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.11.4`（latest，OIDC 发布，带 provenance）→ **0.11.5 待发**（blank 口径对齐侧边栏真值，方案 A） |
+| npm | ✅ `dsh-context-compass@0.11.5`（latest，OIDC 发布，带 provenance）→ **0.11.6 待发**（修方案 A 未生效：空白裁剪消费宿主 `list()` 真实返回形状） |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
-| 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC 首帧 9 行 = 侧边栏口径，真空壳首帧消失，elapsed 5ms（2026-09-03 接手会话） |
+| 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC **首帧即 7 行且三帧稳定**（无 16→6 闪现），与侧边栏真值逐 id 对账全等（0.11.6 rc1，2026-09-03） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
 
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
 
-- **0.11.5** — **罗盘一览 blank 口径对齐侧边栏真值（方案 A）**（2026-09-03，接手会话）：0.11.4 的 blank 用「标题 fold 无标题」代理判定，确认异步 + blankCache 60s TTL 过期 → 真空壳冷会话每帧闪现（实测侧边栏 9 行、罗盘首帧 10 行——0.11.4 的「7 会话对齐」实为稳态对齐，瞬态窗口未对齐）。本版改为消费宿主聚合层 `sessionController.list()` 每行自带的 `sessionListMetadata.blank` 投影真值（侧边栏渲染的就是这份列表）：挂载预热 `refreshBlankTruth` + 请求帧 SWR 刷新，冷 blank 行**首帧即裁剪**；真值缺席/抛错降级回标题代理路径。顺带修正 0.11.3 两处错误镜像：stray 会话保留显示（侧边栏「未分组」桶）、冷无 cwd 记录裁剪（宿主 list() 同款边界）。smoke +5（真值首帧裁剪 / live blank 不裁 / 真值失败降级 / stray 未分组 / 冷无 cwd）；本机测试按新 DoD 条目执行（file: 安装 + 重启 profile 实测首帧对齐）；DEVELOPMENT.md DoD 增补「本机测试」硬性条目（参照 dsh-subagent-router 纪律）
+- **0.11.6** — **修 0.11.5 方案 A 未生效（空白裁剪消费宿主 list() 真实返回形状）**（2026-09-03，接手会话持续）：0.11.5 的 `fetchBlankTruth` 按「宿主返回裸数组」写 `Array.isArray(rows)` 判断，但真实契约 `sessionController.list(_request, signal)` 返回 `SessionListValue = { items: [...] }`（包裹对象）——`Array.isArray` 恒 false 直接 return，blank 真值图从未填充，方案 A 从未生效，仍退化为 0.11.4 legacy 路径（60s TTL 闪现 + 仅 cold）。被验收时 legacy blankCache 填充掩盖（进程重启即露馅：16→6 闪现）。修复：`fetchBlankTruth` 改读 `result.items`（防御兼容裸数组形态）+ 正确传 `({}, signal)` 占位与取消信号；新增 `warmBlankTruth` 挂载预热带重试（`sessionController` 可能晚于本插件挂载，单次 refresh 静默 no-op 致首帧闪现），替换 index.ts 单次 `refreshBlankTruth`。**故障再把门**：原 blank-truth 测试 stub 从裸数组改正为宿主真实 `{items}` 契约形状（此前恰恰掩盖事故）+ 新增「裸数组兼容 / warmBlankTruth 重试」两项测试。本机验收：file: 安装 + 重启 profile，RPC **首帧即 7 行三帧稳定** = 侧边栏真值 7 行逐 id 对账全等（无 16→6 闪现）
+
+- **0.11.5** — **罗盘一览 blank 口径对齐侧边栏真值（方案 A）**（2026-09-03，接手会话）：0.11.4 的 blank 用「标题 fold 无标题」代理判定，确认异步 + blankCache 60s TTL 过期 → 真空壳冷会话每帧闪现（实测侧边栏 9 行、罗盘首帧 10 行——0.11.4 的「7 会话对齐」实为稳态对齐，瞬态窗口未对齐）。本版改为消费宿主聚合层 `sessionController.list()` 每行自带的 `sessionListMetadata.blank` 投影真值（侧边栏渲染的就是这份列表）：挂载预热 `refreshBlankTruth` + 请求帧 SWR 刷新，冷 blank 行**首帧即裁剪**；真值缺席/抛错降级回标题代理路径。顺带修正 0.11.3 两处错误镜像：stray 会话保留显示（侧边栏「未分组」桶）、冷无 cwd 记录裁剪（宿主 list() 同款边界）。smoke +5（真值首帧裁剪 / live blank 不裁 / 真值失败降级 / stray 未分组 / 冷无 cwd）；本机测试按新 DoD 条目执行（file: 安装 + 重启 profile 实测首帧对齐）；DEVELOPMENT.md DoD 增补「本机测试」硬性条目（参照 dsh-subagent-router 纪律）。**注：0.11.5 因本版发现的返回形状 bug，方案 A 实际未生效——已被 0.11.6 接替**
 
 - **0.11.4** — **罗盘一览对齐侧边栏 blank cut**（2026-09-03）：真空壳冷会话（仅 header、无任何消息 → 无标题事件）经后台 title fold 确认后从一览隐藏（首帧不预判、fill 落定后下一帧隐藏，5s 刷新自然对齐）；与侧边栏 `session.seq===0` 的 blank 语义一致，比 0.11.1 时代误伤的 title-null 判定精确（不误杀「有内容但首帧标题未填」的会话）。补 blank smoke 测试
 
