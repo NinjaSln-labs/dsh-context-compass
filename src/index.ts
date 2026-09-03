@@ -23,7 +23,7 @@ import { sessionHealthProjectionDefinition } from './projection.ts'
 import { healthCommandDefinition } from './command.ts'
 import { sessionHealthTool } from './tool.ts'
 import { PriceCache, startPricingRefresh, staticPricing } from './pricing.ts'
-import { handleOverviewRpc, refreshBlankTruth } from './overview.ts'
+import { handleOverviewRpc, warmBlankTruth } from './overview.ts'
 
 export { Config } from './config.ts'
 export { sessionHealthProjectionDefinition, applyHealthEvent, healthView } from './projection.ts'
@@ -31,7 +31,7 @@ export { assess, type HealthReport, type AssessOptions } from './assess.ts'
 export { healthCommandDefinition, buildCommandText } from './command.ts'
 export { buildSnapshotText, probeCrossSession, KNOWLEDGE_SNAPSHOT_KEY } from './knowledge.ts'
 export { sessionHealthTool } from './tool.ts'
-export { buildOverview, sortOverviewRows, rankOf, clearTitleCache, handleOverviewRpc, buildHandoffSummary, type OverviewRow } from './overview.ts'
+export { buildOverview, sortOverviewRows, rankOf, clearTitleCache, warmBlankTruth, refreshBlankTruth, handleOverviewRpc, buildHandoffSummary, type OverviewRow } from './overview.ts'
 export type * from './types.ts'
 
 export const name = 'dsh-context-compass'
@@ -75,9 +75,10 @@ export default {
     const configSource = (): ResolvedConfig => source()
     const resolved = source()
 
-    // 0.11.5 方案 A：挂载即预热 blank 真值图（sessionController 可能尚未就绪 —
-    // 失败无害，首帧请求会按 TTL 节流地 SWR 重试）。
-    void refreshBlankTruth(ctx)
+    // 0.11.5/0.11.6 方案 A：挂载即预热 blank 真值图，带重试——sessionController
+    // 可能晚于本插件挂载，单次 refresh 会静默 no-op 导致首帧闪现空白行；
+    // warmBlankTruth 在预算内短间隔重试直到真值图填充（首帧即正确裁剪）。
+    warmBlankTruth(ctx)
 
     // Live pricing cache: periodic fetch when priceSource is 'auto',
     // static config otherwise. Provided on the context so assess() and the

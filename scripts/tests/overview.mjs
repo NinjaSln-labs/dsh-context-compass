@@ -5,7 +5,7 @@
  * fakeRes/fakeReq live in helpers.mjs.
  */
 import assert from 'node:assert/strict'
-import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, refreshBlankTruth, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
+import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, refreshBlankTruth, warmBlankTruth, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
 import {
   check, config, signal, services, overviewCtx, overviewServices,
   healthOf, fakeRes, fakeReq,
@@ -265,14 +265,19 @@ export async function run() {
     // 侧边栏真值源：宿主 ApiSessionList 每行带 sessionListMetadata.blank 投影
     // （blank = 从未有过 turn/start）。罗盘直接消费它——冷 blank 行首帧即隐藏，
     // 不再有「fill 确认后才隐藏 + 60s TTL 过期闪现」窗口。
+    // 契约提醒：宿主 `sessionController.list(_request, signal)` 返回
+    // `{ items: [...] }`（SessionListValue），不是裸数组！stub 必须按真契约
+    // 包一层 items（2026-09-03 事故：之前按裸数组 stub，掩盖了真机形态错误）。
     const truthCtx = {
       get: name => ({
         ...overviewServices,
         sessionController: {
-          list: async () => [
-            { sessionId: 'blank-cold', blank: true, origin: 'user', cwd: '/w' },
-            { sessionId: 'active-cold', blank: false, origin: 'user', cwd: '/w' },
-          ],
+          list: async () => ({
+            items: [
+              { sessionId: 'blank-cold', blank: true, origin: 'user', cwd: '/w' },
+              { sessionId: 'active-cold', blank: false, origin: 'user', cwd: '/w' },
+            ],
+          }),
         },
         sessionQuery: {
           listSessions: async () => [
@@ -289,6 +294,79 @@ export async function run() {
     clearTitleCache()
   })
 
+  await check('overview: blank truth tolerates a bare-array list() return as a defensive fallback', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // 宿主真契约是 { items: [...] }；但兼容裸数组形态（旧实现/测试桩）不能崩，
+    // 同样能拿到 blank 真值裁剪冷会话。
+    const arrCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessionController: {
+          list: async () => [
+            { sessionId: 'blank-a', blank: true, origin: 'user', cwd: '/w' },
+            { sessionId: 'active-a', blank: false, origin: 'user', cwd: '/w' },
+          ],
+        },
+        sessionQuery: {
+          listSessions: async () => [
+            { header: { id: 'blank-a', createdAt: 1, cwd: '/w' }, live: false, persisted: true },
+            { header: { id: 'active-a', createdAt: 2, cwd: '/w' }, live: false, persisted: true },
+          ],
+          readTitleSnapshots: async () => [],
+        },
+      })[name],
+    }
+    await refreshBlankTruth(arrCtx)
+    const { rows } = await buildOverview(arrCtx, signal)
+    assert.deepEqual(rows.map(r => r.id), ['active-a']) // 裸数组形态同样裁剪
+    clearTitleCache()
+  })
+
+  await check('overview: warmBlankTruth retries until the truth map is populated (first frame correctness)', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // 挂载时 sessionController 可能尚未就绪：warmBlankTruth 必须跳过 no-op 的
+    // 周期，直到服务可用并把真值图填起来——否则面板首帧会闪现空白行。
+    // 模拟：前两次 list 不存在（undefined），第三次才可用。
+    let availability = 0
+    const lateCtx = {
+      get: name => {
+        if (name === 'sessionController') {
+          availability++
+          if (availability < 3) return undefined // 尚未就绪
+          return {
+            list: async () => ({
+              items: [
+                { sessionId: 'blank-w', blank: true, origin: 'user', cwd: '/w' },
+                { sessionId: 'active-w', blank: false, origin: 'user', cwd: '/w' },
+              ],
+            }),
+          }
+        }
+        if (name === 'sessionQuery') {
+          return {
+            listSessions: async () => [
+              { header: { id: 'blank-w', createdAt: 1, cwd: '/w' }, live: false, persisted: true },
+              { header: { id: 'active-w', createdAt: 2, cwd: '/w' }, live: false, persisted: true },
+            ],
+            readTitleSnapshots: async () => [],
+          }
+        }
+        return overviewServices[name]
+      },
+    }
+    // budget 覆盖 3 次试错节奏（起步 + interval）。
+    warmBlankTruth(lateCtx, 10_000, 30)
+    await new Promise(resolve => setTimeout(resolve, 200)) // 让重试循环走完
+    assert.ok(availability >= 3, `should have retried until service ready, got ${availability}`)
+    // 预热后首帧即裁剪空白行。
+    const { rows } = await buildOverview(lateCtx, signal)
+    assert.ok(rows.length >= 1 && rows.every(r => r.id !== 'blank-w'), 'blank row must be cut after warmup')
+    assert.ok(rows.some(r => r.id === 'active-w'), 'active row must remain')
+    clearTitleCache()
+  })
+
   await check('overview: live blank sessions are NOT cut by the blank-truth map', async () => {
     __resetOverviewCachesForTests()
     clearTitleCache()
@@ -300,9 +378,11 @@ export async function run() {
       get: name => ({
         ...overviewServices,
         sessionController: {
-          list: async () => [
-            { sessionId: 'live-blank', blank: true, origin: 'user', cwd: '/w' },
-          ],
+          list: async () => ({
+            items: [
+              { sessionId: 'live-blank', blank: true, origin: 'user', cwd: '/w' },
+            ],
+          }),
         },
         sessions: { get: id => (id === 'live-blank' ? { header: { id } } : undefined) },
         sessionQuery: {

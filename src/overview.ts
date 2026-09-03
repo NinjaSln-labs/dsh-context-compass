@@ -119,17 +119,39 @@ const BLANK_TRUTH_TTL_MS = 4_000
 /** Last refresh attempt time (SWR pacing; module state shared with refreshBlankTruth). */
 const blankTruthAtRef = { at: 0 }
 
+/**
+ * SessionListValue 的真实契约（2026-09-03 事故根源）：宿主
+ * `sessionController.list(_request, signal)` 返回 `{ items: SessionListValue[] }`
+ * （包裹对象），不是裸数组。此处兼容两种形态防御性读取。
+ */
+interface SessionListSummaryLike {
+  sessionId?: unknown
+  blank?: unknown
+}
+
+/** 宿主 sessionController.list 的松散面（真契约：list({cursor?}, signal) → {items}）。 */
+interface SessionControllerLike {
+  list?(_request?: { cursor?: string }, signal?: AbortSignal): Promise<unknown>
+}
+
 /** Kick one background blank-truth refresh; returns the in-flight promise (dedup'd). */
 function fetchBlankTruth(controller: unknown): Promise<void> {
   if (blankTruthFetching) return Promise.resolve()
-  const list = (controller as { list?: (signal?: AbortSignal) => Promise<unknown> } | undefined)?.list
+  const list = (controller as SessionControllerLike | undefined)?.list
   if (typeof list !== 'function') return Promise.resolve()
   blankTruthFetching = true
   const promise = (async () => {
     try {
       const signal = new AbortController().signal
-      const rows = (await list.call(controller, signal)) as Array<{ sessionId?: unknown; blank?: unknown }>
-      if (!Array.isArray(rows)) return
+      const result = await list.call(controller, {}, signal)
+      // 防御兼容：宿主真契约返回 { items: [...] }；兼收裸数组形态（兼容 stub/旧实现）。
+      const items = (result as { items?: unknown } | null | undefined)?.items
+      const rows = Array.isArray(items)
+        ? (items as SessionListSummaryLike[])
+        : Array.isArray(result)
+          ? (result as SessionListSummaryLike[])
+          : null
+      if (rows === null) return
       const next = new Map<string, boolean>()
       for (const row of rows) {
         if (typeof row?.sessionId === 'string' && typeof row.blank === 'boolean') {
@@ -160,6 +182,26 @@ export function refreshBlankTruth(ctx: Context): Promise<void> {
   const controller = ctx.get('sessionController')
   blankTruthAtRef.at = Date.now()
   return fetchBlankTruth(controller)
+}
+
+/**
+ * Mount-time blank-truth warmup with retry. `sessionController` may not be
+ * mounted when this plugin applies (composition order), so a single
+ * refreshBlankTruth can silently no-op and the FIRST panel frame would flash
+ * blank rows (the very bug 0.11.5 was meant to kill). This retries on a short
+ * cadence until the truth map is populated or the budget is exhausted, so a
+ * panel opened after boot gets a correct first frame. Fire-and-forget.
+ */
+export function warmBlankTruth(ctx: Context, budgetMs = 20_000, intervalMs = 1_500): void {
+  const started = Date.now()
+  const attempt = (): void => {
+    if (blankTruth.size > 0) return // populated — done
+    void refreshBlankTruth(ctx)
+    if (blankTruth.size > 0) return
+    if (Date.now() - started >= budgetMs) return // give up quietly
+    setTimeout(attempt, intervalMs)
+  }
+  attempt()
 }
 
 /** Forget the caches (tests / plugin re-apply). */
