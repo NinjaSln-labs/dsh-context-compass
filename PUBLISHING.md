@@ -6,14 +6,16 @@
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.11.2`（latest，OIDC 发布，带 provenance）→ **0.11.3 待发**（罗盘一览 workspace 过滤补进源码） |
+| npm | ✅ `dsh-context-compass@0.11.4`（latest，OIDC 发布，带 provenance）→ **0.11.5 待发**（blank 口径对齐侧边栏真值，方案 A） |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
-| 本地验证 | ⏳ 重启 `dsh web` + 硬刷新后验证一览面板 |
+| 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC 首帧 9 行 = 侧边栏口径，真空壳首帧消失，elapsed 5ms（2026-09-03 接手会话） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
 
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.11.5** — **罗盘一览 blank 口径对齐侧边栏真值（方案 A）**（2026-09-03，接手会话）：0.11.4 的 blank 用「标题 fold 无标题」代理判定，确认异步 + blankCache 60s TTL 过期 → 真空壳冷会话每帧闪现（实测侧边栏 9 行、罗盘首帧 10 行——0.11.4 的「7 会话对齐」实为稳态对齐，瞬态窗口未对齐）。本版改为消费宿主聚合层 `sessionController.list()` 每行自带的 `sessionListMetadata.blank` 投影真值（侧边栏渲染的就是这份列表）：挂载预热 `refreshBlankTruth` + 请求帧 SWR 刷新，冷 blank 行**首帧即裁剪**；真值缺席/抛错降级回标题代理路径。顺带修正 0.11.3 两处错误镜像：stray 会话保留显示（侧边栏「未分组」桶）、冷无 cwd 记录裁剪（宿主 list() 同款边界）。smoke +5（真值首帧裁剪 / live blank 不裁 / 真值失败降级 / stray 未分组 / 冷无 cwd）；本机测试按新 DoD 条目执行（file: 安装 + 重启 profile 实测首帧对齐）；DEVELOPMENT.md DoD 增补「本机测试」硬性条目（参照 dsh-subagent-router 纪律）
 
 - **0.11.4** — **罗盘一览对齐侧边栏 blank cut**（2026-09-03）：真空壳冷会话（仅 header、无任何消息 → 无标题事件）经后台 title fold 确认后从一览隐藏（首帧不预判、fill 落定后下一帧隐藏，5s 刷新自然对齐）；与侧边栏 `session.seq===0` 的 blank 语义一致，比 0.11.1 时代误伤的 title-null 判定精确（不误杀「有内容但首帧标题未填」的会话）。补 blank smoke 测试
 
