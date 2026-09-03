@@ -212,10 +212,10 @@ export const healthOf = (severity, extra = {}) => ({
 export const overviewServices = {
   sessionQuery: {
     listSessions: async () => [
-      { header: { id: 'live-red', createdAt: 100 }, live: true, persisted: true },
-      { header: { id: 'cold-yellow', createdAt: 300 }, live: false, persisted: true },
-      { header: { id: 'cold-unknown', createdAt: 200 }, live: false, persisted: true },
-      { header: { id: 'live-green', createdAt: 400 }, live: true, persisted: true },
+      { header: { id: 'live-red', createdAt: 100, cwd: '/ws' }, live: true, persisted: true },
+      { header: { id: 'cold-yellow', createdAt: 300, cwd: '/ws' }, live: false, persisted: true },
+      { header: { id: 'cold-unknown', createdAt: 200, cwd: '/ws' }, live: false, persisted: true },
+      { header: { id: 'live-green', createdAt: 400, cwd: '/ws' }, live: true, persisted: true },
     ],
     readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `T-${id}` } } })),
   },

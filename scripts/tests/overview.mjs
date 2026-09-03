@@ -5,7 +5,7 @@
  * fakeRes/fakeReq live in helpers.mjs.
  */
 import assert from 'node:assert/strict'
-import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
+import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, refreshBlankTruth, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
 import {
   check, config, signal, services, overviewCtx, overviewServices,
   healthOf, fakeRes, fakeReq,
@@ -104,7 +104,7 @@ export async function run() {
     const fullCtx = {
       get: name => ({
         ...overviewServices,
-        sessionQuery: { listSessions: async () => [{ header: { id: 'a', createdAt: 1 }, live: false, persisted: true }], readTitleSnapshots: async () => [] },
+        sessionQuery: { listSessions: async () => [{ header: { id: 'a', createdAt: 1, cwd: '/w' }, live: false, persisted: true }], readTitleSnapshots: async () => [] },
       })[name],
     }
     const first = await buildOverview(fullCtx, signal)
@@ -127,10 +127,10 @@ export async function run() {
     assert.equal(cleared.rows.length, 0, 'two consecutive empty reads must heal the ghost list')
   })
 
-  await check('overview: top-level + archive filtering matches the sidebar', async () => {
+  await check('overview: top-level + archive + cold-cwd filtering matches the sidebar data source', async () => {
     __resetOverviewCachesForTests()
-    // Subagent children and archived sessions are excluded everywhere; the
-    // cwd / workspace membership plays no role (sidebar shows all of them).
+    // 镜像宿主 ApiSessionList.list() 的入列边界：subagent 儿子、归档会话、
+    // 无 cwd 的冷记录都不进侧边栏数据源；其余照常（含 stray 未分组）。
     const wsServices = {
       ...overviewServices,
       workspaceRegistry: { archivedSessionIds: ['out'] },
@@ -145,7 +145,7 @@ export async function run() {
       },
     }
     const { rows: rows } = await buildOverview({ get: name => wsServices[name] }, signal)
-    assert.deepEqual(rows.map(r => r.id), ['no-cwd', 'in-ws']) // archived + subagent out, newest first
+    assert.deepEqual(rows.map(r => r.id), ['in-ws']) // archived + subagent + cold-no-cwd out
   })
 
   await check('overview: cold loads run OFF the request path — first frame null, next frame backfilled', async () => {
@@ -161,7 +161,7 @@ export async function run() {
           },
         },
         sessionQuery: {
-          listSessions: async () => [{ header: { id: 'cold-a', createdAt: 1 }, live: false, persisted: true }],
+          listSessions: async () => [{ header: { id: 'cold-a', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
           readTitleSnapshots: async () => [],
         },
       })[name],
@@ -223,7 +223,7 @@ export async function run() {
       get: name => ({
         ...overviewServices,
         sessionQuery: {
-          listSessions: async () => [{ header: { id: 't1', createdAt: 1 }, live: false, persisted: true }],
+          listSessions: async () => [{ header: { id: 't1', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
           readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `T-${id}` } } })),
         },
       })[name],
@@ -246,7 +246,7 @@ export async function run() {
       get: name => ({
         ...overviewServices,
         sessionQuery: {
-          listSessions: async () => [{ header: { id: 'b1', createdAt: 1 }, live: false, persisted: true }],
+          listSessions: async () => [{ header: { id: 'b1', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
           readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: undefined } })),
         },
       })[name],
@@ -257,6 +257,134 @@ export async function run() {
     const { rows: second } = await buildOverview(blankCtx, signal)
     assert.equal(second.length, 0) // 确认无标题 → 冷会话隐藏（对齐侧边栏 blank cut）
     clearTitleCache()
+  })
+
+  await check('overview: blank truth (sessionController.list) cuts cold blank rows on the FIRST frame', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // 侧边栏真值源：宿主 ApiSessionList 每行带 sessionListMetadata.blank 投影
+    // （blank = 从未有过 turn/start）。罗盘直接消费它——冷 blank 行首帧即隐藏，
+    // 不再有「fill 确认后才隐藏 + 60s TTL 过期闪现」窗口。
+    const truthCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessionController: {
+          list: async () => [
+            { sessionId: 'blank-cold', blank: true, origin: 'user', cwd: '/w' },
+            { sessionId: 'active-cold', blank: false, origin: 'user', cwd: '/w' },
+          ],
+        },
+        sessionQuery: {
+          listSessions: async () => [
+            { header: { id: 'blank-cold', createdAt: 1, cwd: '/w' }, live: false, persisted: true },
+            { header: { id: 'active-cold', createdAt: 2, cwd: '/w' }, live: false, persisted: true },
+          ],
+          readTitleSnapshots: async () => [],
+        },
+      })[name],
+    }
+    await refreshBlankTruth(truthCtx) // 挂载预热等价物：真值图先落
+    const { rows: first } = await buildOverview(truthCtx, signal)
+    assert.deepEqual(first.map(r => r.id), ['active-cold']) // 首帧即裁剪，无异步窗口
+    clearTitleCache()
+  })
+
+  await check('overview: live blank sessions are NOT cut by the blank-truth map', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // blank 裁剪只对冷行生效：live 行的 blank 真值会随 turn/start 即时翻转，
+    // 而罗盘的 truth map 是后台刷新的——裁剪 live 行会用过期真值误隐藏。
+    // 侧边栏只对「当前会话」显示 blank 行；罗盘对 live blank 行保持显示
+    // （这是已记录的口径差：罗盘列真实会话，侧边栏的 provisional 新会话行是 UI 占位）。
+    const truthCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessionController: {
+          list: async () => [
+            { sessionId: 'live-blank', blank: true, origin: 'user', cwd: '/w' },
+          ],
+        },
+        sessions: { get: id => (id === 'live-blank' ? { header: { id } } : undefined) },
+        sessionQuery: {
+          listSessions: async () => [
+            { header: { id: 'live-blank', createdAt: 1, cwd: '/w' }, live: true, persisted: true },
+          ],
+          readTitleSnapshots: async () => [],
+        },
+      })[name],
+    }
+    const { rows } = await buildOverview(truthCtx, signal)
+    assert.deepEqual(rows.map(r => r.id), ['live-blank'])
+    clearTitleCache()
+  })
+
+  await check('overview: sessionController.list() failure degrades to the legacy title-proxy path', async () => {
+    __resetOverviewCachesForTests()
+    clearTitleCache()
+    // 真值源缺席/抛错 → 退回 0.11.4 的标题代理路径（不崩、行为同旧）。
+    const fallbackCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessionController: { list: async () => { throw new Error('controller boom') } },
+        sessionQuery: {
+          listSessions: async () => [{ header: { id: 'b1', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
+          readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: undefined } })),
+        },
+      })[name],
+    }
+    const { rows: first } = await buildOverview(fallbackCtx, signal)
+    assert.equal(first.length, 1) // 代理路径：首帧保留，fill 后隐藏
+    await new Promise(resolve => setTimeout(resolve, 50))
+    const { rows: second } = await buildOverview(fallbackCtx, signal)
+    assert.equal(second.length, 0)
+    clearTitleCache()
+  })
+
+  await check('overview: stray sessions stay visible as 未分组 (sidebar ungrouped bucket)', async () => {
+    __resetOverviewCachesForTests()
+    // 侧边栏 groupByWorkspace：不属于任何 workspace 的会话进「未分组」桶照常显示。
+    // 0.11.3 的 ws===undefined→drop 是对侧边栏的错误镜像——修正为保留（workspace:null）。
+    const strayCtx = {
+      get: name => ({
+        ...overviewServices,
+        workspaceRegistry: {
+          archivedSessionIds: [],
+          list: () => [{ id: 'w1', path: '/w1', title: 'W1', sessionIds: ['in-ws'] }],
+        },
+        sessionQuery: {
+          listSessions: async () => [
+            { header: { id: 'in-ws', createdAt: 1, cwd: '/w1' }, live: false, persisted: true },
+            { header: { id: 'stray-x', createdAt: 2, cwd: '/elsewhere' }, live: false, persisted: true },
+          ],
+          readTitleSnapshots: async () => [],
+        },
+      })[name],
+    }
+    const { rows } = await buildOverview(strayCtx, signal)
+    assert.deepEqual(rows.map(r => r.id), ['stray-x', 'in-ws']) // stray 保留，最新在前
+    assert.equal(rows.find(r => r.id === 'in-ws').workspace.title, 'W1')
+    assert.equal(rows.find(r => r.id === 'stray-x').workspace, null) // 未分组
+  })
+
+  await check('overview: cold records without cwd are cut — live records without cwd stay (host list() mirror)', async () => {
+    __resetOverviewCachesForTests()
+    // 宿主 ApiSessionList.list() 对冷会话要求 header.cwd 存在（cwd 缺失的冷记录
+    // 根本不进侧边栏数据源）；live 会话不受此限。罗盘镜像同一条边界。
+    const cwdCtx = {
+      get: name => ({
+        ...overviewServices,
+        sessions: { get: id => (id === 'live-nocwd' ? { header: { id } } : undefined) },
+        sessionQuery: {
+          listSessions: async () => [
+            { header: { id: 'cold-nocwd', createdAt: 1 }, live: false, persisted: true },
+            { header: { id: 'live-nocwd', createdAt: 2 }, live: true, persisted: true },
+          ],
+          readTitleSnapshots: async () => [],
+        },
+      })[name],
+    }
+    const { rows } = await buildOverview(cwdCtx, signal)
+    assert.deepEqual(rows.map(r => r.id), ['live-nocwd'])
   })
 
   await check('overview: one broken record degrades that row only', async () => {
@@ -282,7 +410,7 @@ export async function run() {
       get: name => ({
         ...overviewServices,
         sessionQuery: {
-          listSessions: async () => [{ header: { id: 't-boom', createdAt: 1 }, live: false, persisted: true }],
+          listSessions: async () => [{ header: { id: 't-boom', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
           readTitleSnapshots: async () => { throw new Error('title read boom') },
         },
         sessionTitle: { get: () => { throw new Error('title get boom') } },

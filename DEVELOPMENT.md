@@ -53,6 +53,7 @@ Backlog ──Sprint 计划──▶ 设计决策 ──▶ 实现 ──▶ DoD
 ### 功能 DoD
 - [ ] 用户故事描述的行为可复现（手动走一遍）
 - [ ] 端到端验收任务跑通
+- [ ] **本机测试**：改了 `src/`/`lib/` 后按部署纪律 `file:` 安装 + 重启 profile，对运行中 harness 实测验收（纪律参照 dsh-subagent-router 的 DoD「真机/实测闭环」——无运行中验证 = 未做完）
 - [ ] 边界条件处理明确（空/并发/超时/取消/重启）
 
 ### 质量 DoD（AI 风险检查）
@@ -154,6 +155,7 @@ git config core.hooksPath .githooks
 | 宿主升级导致 peer API break | 插件启动即炸（如 dsh-settings 0.1.2-alpha.4 移除 installSettingsSection） | 发版前对照宿主版本验证；peerDependencies 如实声明 |
 | registry 装的插件改了源码没发版 | 同版本号不同内容，行为错位、版本校验失效 | `pnpm check:deploy`（registry 差异 → FAIL）+ `.githooks/pre-commit` 硬拦截 + 插件级 AGENTS.md 规则内联 |
 | 罗盘一览与侧边栏会话数不一致 | 面板多出无工作区/空标题冷会话 | 一览走 workspaceRegistry 过滤 + blank 冷会话过滤（对齐 sidebar 数据源） |
+| blank 代理判定漂移（无标题≠blank，60s TTL 过期后空行闪现） | 面板比侧边栏多 1 行真空壳会话，重开面板首帧必闪现 | **0.11.5 方案 A**：blank 真值改从宿主聚合层 `sessionController.list()` 的 `sessionListMetadata.blank` 投影取（侧边栏渲染的就是这份列表）——挂载预热 + 请求帧 SWR 刷新，首帧即裁剪；代理路径仅作真值缺席时的降级 |
 
 ## 维护
 

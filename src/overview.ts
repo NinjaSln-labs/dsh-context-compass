@@ -62,7 +62,7 @@ export { rankOf, sortOverviewRows, type SortableOverviewRow }
 /** Loose face of the sessionQuery service (only the parts overview needs). */
 interface SessionQueryLike {
   listSessions(signal?: AbortSignal): Promise<Array<{
-    header: { id: string; createdAt?: number; origin?: string }
+    header: { id: string; createdAt?: number; origin?: string; cwd?: string }
     live?: boolean
     persisted?: boolean
   }>>
@@ -101,10 +101,73 @@ const TITLE_TTL_MS = 60_000
 const blankCache = new Map<string, number /* at */>()
 const BLANK_TTL_MS = 60_000
 
+/**
+ * Session-visibility cut fed by the host aggregator (sessionController.list):
+ * 0.11.5 方案 A. The sidebar renders exactly this list — every row already
+ * carries the sessionListMetadata.blank projection truth
+ * (blank = never had a turn/start event), so cutting cold blank rows from it
+ * makes the FIRST frame correct: no async fill confirmation, no 60s-TTL
+ * re-appearance window. The map refreshes in the background after each frame
+ * (stale-while-revalidate) and NEVER blocks or fails the panel: an absent or
+ * throwing controller simply leaves the map empty and the legacy title-proxy
+ * path (scheduleTitleFill + blankCache) keeps working.
+ */
+const blankTruth = new Map<string, boolean>()
+let blankTruthFetching = false
+/** Padding around the sidebar's own refresh cadence so panel polls mostly hit cache. */
+const BLANK_TRUTH_TTL_MS = 4_000
+/** Last refresh attempt time (SWR pacing; module state shared with refreshBlankTruth). */
+const blankTruthAtRef = { at: 0 }
+
+/** Kick one background blank-truth refresh; returns the in-flight promise (dedup'd). */
+function fetchBlankTruth(controller: unknown): Promise<void> {
+  if (blankTruthFetching) return Promise.resolve()
+  const list = (controller as { list?: (signal?: AbortSignal) => Promise<unknown> } | undefined)?.list
+  if (typeof list !== 'function') return Promise.resolve()
+  blankTruthFetching = true
+  const promise = (async () => {
+    try {
+      const signal = new AbortController().signal
+      const rows = (await list.call(controller, signal)) as Array<{ sessionId?: unknown; blank?: unknown }>
+      if (!Array.isArray(rows)) return
+      const next = new Map<string, boolean>()
+      for (const row of rows) {
+        if (typeof row?.sessionId === 'string' && typeof row.blank === 'boolean') {
+          next.set(row.sessionId, row.blank)
+        }
+      }
+      // 只整体替换非空结果（与 listCache 同一防抖动原则）：空结果可能是网关
+      // 瞬态，不覆盖上一份真值；真「全部删空」由连续空采信路径兜底（listCache）。
+      if (next.size > 0) {
+        blankTruth.clear()
+        for (const [k, v] of next) blankTruth.set(k, v)
+      }
+    } catch { /* keep previous truth; next frame retries */ }
+    finally { blankTruthFetching = false }
+  })()
+  void promise
+  return promise
+}
+
+/**
+ * Refresh the blank-truth map from the host aggregator. Fire-and-forget at
+ * plugin mount (index.ts) — warms the map so a panel opened later gets a
+ * correct FIRST frame; request frames keep SWR-refreshing it every
+ * BLANK_TRUTH_TTL_MS. An absent/throwing controller resolves harmlessly and
+ * the legacy title-proxy path stays in charge.
+ */
+export function refreshBlankTruth(ctx: Context): Promise<void> {
+  const controller = ctx.get('sessionController')
+  blankTruthAtRef.at = Date.now()
+  return fetchBlankTruth(controller)
+}
+
 /** Forget the caches (tests / plugin re-apply). */
 export function clearTitleCache(): void {
   titleCache.clear()
   blankCache.clear()
+  blankTruth.clear()
+  blankTruthFetching = false
 }
 
 /**
@@ -162,20 +225,22 @@ const COLD_TTL_MS = 60_000
 const COLD_MAX_NEW = 4
 const COLD_LOAD_TIMEOUT_MS = 20_000
 
-/** 测试专用：清空模块级缓存（listSessions / cold load），隔离用例间的 stub 状态。 */
+/** 测试专用：清空模块级缓存（listSessions / cold load / blank truth），隔离用例间的 stub 状态。 */
 export function __resetOverviewCachesForTests(): void {
   listCache = { rows: null, at: 0 }
   listInFlight.clear()
   coldCache.clear()
   coldInFlight.clear()
   titleCache.clear()
+  blankTruth.clear()
+  blankTruthFetching = false
 }
 
 /**
  * listSessions 结果缓存（6s TTL——略大于面板 5s 轮询，保证轮询帧大多命中缓存）+ 在途去重。空/异常结果不覆盖已有缓存。
  * 见 buildOverview 内注释——listSessions 是本 RPC 时延的全部来源。
  */
-interface ListRowRec { header: { id: string; createdAt?: number; origin?: string }; live?: boolean; persisted?: boolean }
+interface ListRowRec { header: { id: string; createdAt?: number; origin?: string; cwd?: string }; live?: boolean; persisted?: boolean }
 let listCache: { rows: ListRowRec[] | null; at: number } = { rows: null, at: 0 }
 const listInFlight = new Map<string, Promise<unknown>>()
 const LIST_TTL_MS = 6_000
@@ -321,6 +386,17 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     }
   } catch { /* rows stay ungrouped */ }
 
+  // 0.11.5 方案 A：blank 真值来自宿主聚合层（sessionController.list —— 侧边栏
+  // 渲染的就是这份列表，每行带 sessionListMetadata.blank 投影）。挂载时已预热
+  // （refreshBlankTruth），请求帧按 TTL 节流地 SWR 后台刷新；首帧即有真值可用。
+  // 缺席/抛错时地图为空，行管线退回 0.11.4 的标题代理路径。
+  const sessionController = ctx.get('sessionController') as unknown
+  const blankTruthFresh = blankTruth.size > 0
+  if (Date.now() - blankTruthAtRef.at >= BLANK_TRUTH_TTL_MS) {
+    blankTruthAtRef.at = Date.now()
+    void fetchBlankTruth(sessionController)
+  }
+
   const sessionsStore = ctx.get('sessions') as SessionsStoreLike | undefined
   const projections = ctx.get('sessionProjections') as
     | { snapshot(session: unknown): { values?: Record<string, unknown> } }
@@ -358,10 +434,23 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     // archived sessions stay out.
     if (rec.header.origin === 'subagent') continue
     if (archived !== null && archived.has(id)) continue
-    // Match sidebar: only show sessions that belong to a listed workspace.
-    // Without workspace mapping (headless/no registry), show all valid sessions.
+    // Host list() mirror: cold records without header.cwd never enter the
+    // sidebar's data source (ApiSessionList.list skips them) — cut the same
+    // rows here. Live records are unaffected (summaryFor always includes them).
+    if (rec.live !== true && rec.persisted === true && rec.header.cwd === undefined) continue
+    // Blank truth cut (方案 A): a session whose projection says it never had a
+    // turn/start is the sidebar's blank row — hidden for every non-current
+    // session. Cut COLD rows only: a live row's blank flag flips the moment a
+    // turn starts, while this map is background-refreshed — cutting live rows
+    // would hide them on stale truth. (The sidebar's remaining blank row is
+    // the provisional current-session placeholder; the compass lists real
+    // sessions and deliberately does not mirror it.)
+    if (blankTruthFresh && rec.live !== true && blankTruth.get(id) === true) continue
+    // Workspace mapping: the sidebar's groupByWorkspace shows sessions outside
+    // every workspace in its 未分组 bucket — stray rows STAY (workspace: null),
+    // mirroring that bucket. (0.11.3 dropped strays — a wrong mirror, fixed in
+    // 0.11.5.) Without a registry (headless), rows are ungrouped as before.
     const ws = workspaceBySession.get(id)
-    if (workspaceBySession.size > 0 && ws === undefined) continue
     const createdAt = typeof rec.header.createdAt === 'number' ? rec.header.createdAt : 0
 
     // Health value: live projection snapshot first, then the persisted cache
