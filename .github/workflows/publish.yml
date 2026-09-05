@@ -7,7 +7,12 @@
 #   （来源仓库须 public 才能生成 provenance）
 # - 权限最小化：contents: read + id-token: write（OIDC 签发所需）
 # - 版本一致性守卫：tag 版本必须与 package.json version 完全一致
-# - actions 按 SHA 固定
+# - actions 按 SHA 固定（防供应链；升级 action 时换 SHA 并注明版本）
+#
+# 可选人工审批门：GitHub repo Settings → Environments 建 <env 名> 并设
+# required reviewers，然后取消下行注释（npm 端 trusted publisher 的
+# environment 字段须与这里同名，逐字段一致）。
+# environment: npm-publish
 name: publish
 
 on:
@@ -50,13 +55,10 @@ jobs:
         run: npm ci --legacy-peer-deps
         env:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
-      - name: Verify (build + typecheck + smoke + mount + client-mount)
-        run: |
-          npm run build
-          npm run typecheck
-          npm run smoke
-          npm run mount
-          node scripts/client-mount.mjs
+      - name: 'Verify (build → typecheck → smoke → mount → client-mount)'
+        # 验证链单源：scripts/verify.mjs——链内增删步骤只改它；此处与 package.json "test" 都只调它。
+        # smoke/mount/vitest 为探测式：文件存在才跑，接入即自动进链。
+        run: node scripts/verify.mjs
       - name: Publish to npm (OIDC trusted publishing)
         # 升级 npm：trusted publishing 需 npm CLI >= 11.5.1（含 OIDC 登录支持）。
         # OIDC 认证由 id-token: write 提供，无需 NODE_AUTH_TOKEN；provenance
