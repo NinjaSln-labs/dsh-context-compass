@@ -40,12 +40,20 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       kind: 'list'
       scope: 'root'
     }
+    /** 设置 → 插件配置 → 罗盘配置卡（keyed by settings namespace）。 */
+    'settings.plugin.item': {
+      kind: 'keyed'
+      scope: 'root'
+      owner: { children?: never }
+    }
   }
 }
 import { injectStyles } from './client/styles.ts'
 import { HealthBadge } from './client/badge.tsx'
 import { CompassCommandCard } from './client/command-card.tsx'
 import { OverviewAction, OverviewPanel, OverviewStore } from './client/overview.tsx'
+import { createSettingsCard } from './client/settings-card/index.ts'
+import { SettingsCard } from './client/settings-card/card.tsx'
 import type { ProjectionFace, CommandsRemote } from './client/shared.ts'
 // Re-export the report parser + pressure helpers — the client-mount test
 // asserts them on the entry module (the pre-split client.tsx exported them).
@@ -63,7 +71,7 @@ export const name = 'dsh-context-compass'
  * There is deliberately NO `remote.sessionHealth`: plugin Remotes never mount
  * client-side, and an injected one would leave the entry pending forever.
  */
-export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale']
+export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale', 'settingsScope']
 
 /** Client entry: register the badge + the multi-session overview panel seats. */
 export function apply(ctx: ClientContext): void {
@@ -82,6 +90,16 @@ export function apply(ctx: ClientContext): void {
   // share one open-state store created per apply (disposed with the fiber —
   // a re-apply starts fresh, an unload takes the registrations with it).
   const overviewStore = new OverviewStore()
+
+  // C2：罗盘配置卡 controller。settingsScope 是 cordis 服务注入（inject 已含）；
+  // bind 返回的 scope 已挂 dispose 到本 fiber（官方 bind 内置 ctx.effect），无需手动清理。
+  // cast：宿主 SettingsScope 与自建 CompassScopeLike 因 mutate 参数逆变不直接兼容，
+  // 用双 cast（as unknown as）保证通过（形状已由契约复核确认，语义明确）。
+  const compassSettingsScope = (ctx as unknown as { settingsScope: { bind(spec: { namespace: string }): unknown } }).settingsScope
+  const compassCard = createSettingsCard(
+    compassSettingsScope.bind({ namespace: 'context-compass' }) as unknown as Parameters<typeof createSettingsCard>[0],
+  )
+  ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
     { name: 'conversation.session.header.utilities', id: 'session-health-dot', order: 10 } as never,
@@ -119,4 +137,10 @@ export function apply(ctx: ClientContext): void {
       />
     ),
   ) as never)
+  ctx.slots.inject('settings.plugin.item', function* () {
+    yield ctx.slots.register(
+      { name: 'settings.plugin.item', key: 'context-compass' } as never,
+      () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
+    ) as never
+  })
 }

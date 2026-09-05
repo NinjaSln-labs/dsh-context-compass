@@ -137,6 +137,40 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-pager-btn:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
 .sh-pager-info{font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
 .sh-foot-hint{margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sh-cf-card{border:0.5px solid var(--dsw-alias-border-l4);border-radius:16px;background:var(--dsw-alias-bg-layer-3);padding:10px 14px;display:flex;flex-direction:column;gap:10px}
+.sh-cf-header{display:flex;align-items:center;gap:8px}
+.sh-cf-chevron{background:transparent;border:none;color:var(--dsw-alias-label-secondary);cursor:pointer;padding:2px 4px;border-radius:6px}
+.sh-cf-chevron:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.sh-cf-title{font-weight:600;color:var(--dsw-alias-label-primary)}
+.sh-cf-desc{color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1.5;margin-top:2px}
+.sh-cf-readonly{color:var(--dsw-alias-label-tertiary);font-size:12px}
+.sh-cf-body{display:flex;flex-direction:column;gap:16px}
+.sh-cf-group{display:flex;flex-direction:column;gap:6px}
+.sh-cf-group-title{margin:0;font-size:13px;font-weight:600;color:var(--dsw-alias-label-primary)}
+.sh-cf-field{display:flex;flex-direction:column;gap:6px;padding:8px 0;border-top:0.5px solid var(--dsw-alias-border-l2)}
+.sh-cf-field:first-of-type{border-top:none;padding-top:0}
+.sh-cf-field-top{display:flex;align-items:center;gap:8px}
+.sh-cf-label{font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary)}
+.sh-cf-reset{margin-left:auto;background:transparent;border:none;color:var(--dsw-alias-label-tertiary);font-size:12px;cursor:pointer}
+.sh-cf-reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:4px}
+.sh-cf-restart{color:var(--dsw-alias-label-tertiary);font-size:12px;margin-left:auto}
+.sh-cf-hint{color:var(--dsw-alias-label-tertiary);font-size:12px}
+.sh-cf-error{color:var(--dsw-alias-state-error-primary);font-size:12px}
+.sh-cf-checkbox{width:16px;height:16px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.sh-cf-input,.sh-cf-select{height:34px;padding:0 12px;font:inherit;font-size:13px;line-height:20px;color:var(--dsw-alias-label-primary);background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);border-radius:8px;box-sizing:border-box}
+.sh-cf-input:focus-visible,.sh-cf-select:focus-visible{outline:none;border-color:var(--dsw-alias-brand-primary)}
+.sh-cf-invalid{border-color:var(--dsw-alias-state-error-primary)}
+.sh-cf-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+.sh-cf-failed{color:var(--dsw-alias-state-error-primary);font-size:12px}
+.sh-cf-saving{color:var(--dsw-alias-label-tertiary);font-size:12px}
+.sh-cf-save{font-size:13px;padding:5px 14px;border-radius:8px;border:none;background:var(--dsw-alias-button-elevated-fill);color:var(--dsw-alias-label-primary);cursor:pointer;font-weight:600}
+.sh-cf-save:hover:not(:disabled){background:var(--dsw-alias-button-floating-hover)}
+.sh-cf-save:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.sh-cf-save:disabled{opacity:.5;cursor:default}
+.sh-cf-discard{font-size:13px;padding:5px 14px;border-radius:8px;border:1px solid var(--dsw-alias-border-l2);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
+.sh-cf-discard:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
+.sh-cf-discard:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
+.sh-cf-discard:disabled{opacity:.5;cursor:default}
 `
 
 /** Package id — must match package.json `name` (injectStyles uses it for the style tag). */
