@@ -16,3 +16,8 @@ HANDOFF-ARCHIVE/
 C2-REWRITE-BLUEPRINT.md
 # 实施计划草稿（评审迭代期，定稿后归档/删除）
 docs/superpowers/
+
+# scaffold 过程目录（临时物；lock/ 入库，过程目录不入库）
+.scaffold-update/
+.scaffold-merge/
+.scaffold/conflicts/
