@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.11.0**（2026-08-27 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.12.0**（2026-09-06 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 
@@ -27,7 +27,7 @@
 ### 质量
 
 - **十二轮审计**：51 fixed + 25 recorded（0 残留）
-- **117 项自动化测试全绿**：107 smoke + 4 mount + 7 client-mount + 6 visual（0.11.0 时点复核）
+- **160 项自动化测试全绿**：130 smoke + 7 mount + 23 client-mount（含 13 组 card-form 纯逻辑单测）+ 6 visual（0.12.0 时点复核）
 
 ### 稳定性基建（0.8.0 先行落地）
 
@@ -54,6 +54,10 @@
 - **测试规模** — smoke 107 + mount 6 + client-mount 7 + visual 6
 - **S4 canary 发布通道（顺带交付）** — `publish.yml`：prerelease 版本（`0.10.1-next.0` 形态，tag 同后缀）自动 `npm publish --tag next`（不动 latest）；新增 `canary-promote.yml`（workflow_dispatch 输入版本号 → 守卫 prerelease/存在性 → `npm dist-tag add … latest`，走同一 npm-publish 审批门）；流程文档入 `PUBLISHING.md`
 
+### 0.12.0 C2 配置卡片
+
+- **C2 Client 配置卡片**（`settings.plugin.item` keyed 自建，官方 `settingsScope` 通道）——`docs/C2-SETTINGS-CARD-DESIGN.md` 原定 RPC 转发方案经 5 轮评审后发现宿主 `settingsScope.bind()` 直接支持多段 path mutate，重写为干净版方案：client 侧 `inject: ['settingsScope']` → `ctx.settingsScope.bind({namespace:'context-compass'})` → 原子 `mutate(ops, revision)` + 写后回读落地判定。22 字段全量（阈值 8 / 检查项 7 / 投影 1 / 计费 6），4 组分 section 布局；草稿判别联合（text/bool/clear）+ parseField 范围校验（0-1 / 整数 / select 选项）+ thresholdError 单调性（mid < high < critical）；可访问性补 id/htmlFor/aria-describedby/aria-invalid/aria-expanded/aria-controls/role=status aria-live；官方壳样式 `.sh-cf-*` 块（radius 16 / border l4 / layer-3 bg / focus-visible brand-primary）。13 组 card-form 纯逻辑单测（shell 态 / editText / toggle / overridden / reset→unset / 原子 mutate / save 失败保留 / invalid 禁存 / 语义比较 number+strings / deferred-mutate 对象身份守卫 / clear 无 override 撤销 / discard / 阈值单调 / parseField 范围 / select 选项）+ client-mount 座位断言。peer 新增 `@deepseek-ai/dsh-client-ui-settings: ^0.1.2-alpha.4`，dsh.client.inject 末尾追加。测试规模：smoke 130 + mount 7 + client-mount 23 + visual 6
+
 ### 0.11.0 审计收敛与工程化
 
 - **AUDIT-0.10.0 修复批** — P1×4 / P2×6 / P3×3 已修（`a73578e`）：OV-1 空结果双连采信清空（幽灵列表自愈）、OV-2/3 `isLoopback` fail-closed + Host 头校验（防 DNS rebinding）、C1-1 settings 接线 try/catch 降级、C1-2 syncProjectionUnit 去重 pending inject、C1-3 validateConfig 全数值字段有限性、R1-1 采样按 (turn, step) 去重（stateVersion 9→10）、R1-2 不再泄漏「null%」、R1-3 压缩捕获失败失效陈旧比例、R1-4/5 sparkline aria 口径 + overflow 可见；recorded 项留档（`docs/AUDIT-0.10.0.md`）
@@ -76,13 +80,9 @@
 
 > **稳定性基建 S0–S4 全部交付**（S4 见「已交付」0.10.0 段），本节无待做项。
 
-### 配置点接入（C1 已交付，C2 待实施）
+### 配置点接入（C1/C2 均已交付）
 
-> `ctx.settings` 插件配置点：Host 注册 settings 命名空间 + Client 在 `settings.plugin.item` 槽注册卡片，设置 UI 直接调参。**C1 已交付（0.10.0，设计定稿 `docs/C1-SETTINGS-DESIGN.md`）；C2 待实施。**
-
-| # | 项 | 优先级 | 动机 / 价值 | 依赖 |
-|---|---|---|---|---|
-| C2 | **Client 配置卡片**（`settings.plugin.item` keyed 自建） | P3 | 设置 UI 直接调参 | C1 已落地；场外插件不可复用内置控件（bundle 门禁），需自建表单 + 草稿暂存 + revision 设栅（`SettingsConflictError` 兜底）；卡片数据面走既有 `/context-compass-rpc` 转发 `describe({redactSecrets:true})`/`update` |
+> `ctx.settings` 插件配置点：Host 注册 settings 命名空间 + Client 在 `settings.plugin.item` 槽注册卡片，设置 UI 直接调参。**C1 已交付（0.10.0）；C2 已交付（0.12.0）。**
 
 ### 功能项
 
@@ -110,7 +110,7 @@
 | **0.8.0** | S2 stateVersion 兼容测试 + S3 配置生效冒烟（S4 canary 可选，顺延）——稳定性基建收尾 |
 | ~~0.9.0~~ | R1 sparkline（已交付）· C1 调研 + 设计定稿（已交付）|
 | **0.10.0** | **C1 host 配置点接入（已交付，随本版发）**——`installSettingsSection` getter 模式：thresholds/checks live 生效、resolveConfig 双源治愈、validate 三档单调、projection.enabled live 切换；pricing 源 4 字段 restart |
-| **0.11.x** | C2 client 配置卡片（设计定稿已出 `docs/C2-SETTINGS-CARD-DESIGN.md`，实施待 dsh 0.1.2 发版后）· **harness 0.1.2 升级适配**（两项高影响：`sessionProjectionCache.coldSnapshot` 签名 breaking / `conversation.chat.commandview` slot 移除，详见本地私有 HANDOFF（不入仓库）§3.1） |
+| **0.12.0** | **C2 client 配置卡片（已交付）**——`settingsScope` 通道（官方 client inject + bind，多段 path mutate + revision fence），22 字段全量（阈值 8 / 检查项 7 / 投影 1 / 计费 6），草稿暂存 + parseField 范围校验 + thresholdError 单调性，可访问性 aria，官方壳样式对齐；13 组 card-form 纯逻辑单测 |
 | **后续** | R3 / R4 / R5 / R6 · B1 / B2（等依赖就绪）|
 
 ## 维护规则

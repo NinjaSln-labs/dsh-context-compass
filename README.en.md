@@ -49,6 +49,8 @@ Per the methodology, the economy dimension (per-round billable, cache-discounted
 
 **Live effect (v0.10.0)**: the plugin registers the settings namespace `context-compass` — while the host settings system (`ctx.settings`) is mounted, changes to `thresholds` / `checks` / the `cost` display fields **take effect immediately** (badge on the next push frame, the next `/compass` uses the new values) with no restart; toggling `projection.enabled` is live too. Only `cost.priceSource / priceUrl / priceFallbackUrl / priceRefreshHours` (the price-refresh wiring) need a restart. Deployments without a settings service fall back to the composition entry config and behave exactly as before.
 
+**Browser settings card (v0.12.0, C2)**: Settings → Plugin Config → Context Compass, directly adjust all thresholds and switches. Threshold and check changes take effect immediately after save; the 6 cost fields (`cacheHitDiscount` / `inputPricePerM` / `priceSource` / `priceUrl` / `priceFallbackUrl` / `priceRefreshHours`) require a **restart** (PriceCache freezes at mount). Local write persistence only works on loopback deployments.
+
 ```ts
 // thresholds: decision-model parameters
 thresholds: {

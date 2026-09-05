@@ -2,11 +2,11 @@
 
 **2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-09-03 更新）
+## 发布状态（2026-09-06 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.11.5`（latest，OIDC 发布，带 provenance）→ **0.11.6 待发**（修方案 A 未生效：空白裁剪消费宿主 `list()` 真实返回形状） |
+| npm | ✅ `dsh-context-compass@0.12.0`（latest，OIDC 发布，带 provenance）——C2 配置卡片完整实施（settingsScope 通道，22 字段全量，13 组 card-form 单测） |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
 | 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC **首帧即 7 行且三帧稳定**（无 16→6 闪现），与侧边栏真值逐 id 对账全等（0.11.6 rc1，2026-09-03） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
@@ -14,6 +14,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.12.0** — **C2 配置卡片完整实施**（2026-09-06）：原设计定稿（`docs/C2-SETTINGS-CARD-DESIGN.md`）的自建 RPC 转发方案经 5 轮评审后重写为干净版——宿主 `settingsScope.bind({namespace})` 直接支持多段 path mutate + revision fence，无需自建 `/context-compass-rpc` 转发。Client 侧 `inject: ['settingsScope']` → `compassSettingsScope.bind({namespace:'context-compass'})` → `CompassCardForm` 草稿判别联合（text/bool/clear）+ parseField 范围校验（0-1 / 整数 / select 选项）+ thresholdError 单调性（mid < high < critical）；22 字段全量按 4 组分 section 布局；可访问性补 id/htmlFor/aria-describedby/aria-invalid/aria-expanded/aria-controls/role=status aria-live；官方壳样式 `.sh-cf-*` 块；13 组 card-form 纯逻辑单测 + client-mount 座位断言。peer 新增 `@deepseek-ai/dsh-client-ui-settings: ^0.1.2-alpha.4`，dsh.client.inject 末尾追加。测试规模：smoke 130 + mount 7 + client-mount 23 + visual 6
 
 - **0.11.6** — **修 0.11.5 方案 A 未生效（空白裁剪消费宿主 list() 真实返回形状）**（2026-09-03，接手会话持续）：0.11.5 的 `fetchBlankTruth` 按「宿主返回裸数组」写 `Array.isArray(rows)` 判断，但真实契约 `sessionController.list(_request, signal)` 返回 `SessionListValue = { items: [...] }`（包裹对象）——`Array.isArray` 恒 false 直接 return，blank 真值图从未填充，方案 A 从未生效，仍退化为 0.11.4 legacy 路径（60s TTL 闪现 + 仅 cold）。被验收时 legacy blankCache 填充掩盖（进程重启即露馅：16→6 闪现）。修复：`fetchBlankTruth` 改读 `result.items`（防御兼容裸数组形态）+ 正确传 `({}, signal)` 占位与取消信号；新增 `warmBlankTruth` 挂载预热带重试（`sessionController` 可能晚于本插件挂载，单次 refresh 静默 no-op 致首帧闪现），替换 index.ts 单次 `refreshBlankTruth`。**故障再把门**：原 blank-truth 测试 stub 从裸数组改正为宿主真实 `{items}` 契约形状（此前恰恰掩盖事故）+ 新增「裸数组兼容 / warmBlankTruth 重试」两项测试。本机验收：file: 安装 + 重启 profile，RPC **首帧即 7 行三帧稳定** = 侧边栏真值 7 行逐 id 对账全等（无 16→6 闪现）
 
@@ -137,7 +139,7 @@ dsh plugin add dsh-context-compass
 - **发布流程（CI 自动发布 + 人工审批门）**：
   ```sh
   cd dsh-context-compass
-  npm version patch -m "chore: release v%s"   # 自动提交 + 打 tag context-compass-vX.Y.Z
+  npm version patch --tag-version-prefix=context-compass-v -m "chore: release dsh-context-compass v%s"   # 自动提交 + 打 tag context-compass-vX.Y.Z（--tag-version-prefix 参数覆盖 npm 默认 'v'，对齐仓库 publish.yml Guard 要求）
   git push && git push --tags                  # CI（.github/workflows/publish.yml）接手：
                                                #   验证链（build/typecheck/smoke/mount/client-mount）
                                                #   → tag 版本一致性守卫 → 等你在 GitHub 批准

@@ -49,6 +49,8 @@
 
 **live 生效（v0.10.0）**：插件注册 settings 命名空间 `context-compass`——宿主设置体系（`ctx.settings`）挂载时，`thresholds` / `checks` / `cost` 显示项改动**即时生效**（badge 下一帧、下次 /compass 即用新值），无需重启；`projection.enabled` 切换亦 live。仅 `cost.priceSource / priceUrl / priceFallbackUrl / priceRefreshHours` 四项（价格刷新 wiring）需重启。无 settings 服务的部署回退组合入口配置，行为不变。
 
+**浏览器配置卡片（v0.12.0，C2）**：设置 → 插件配置 → 上下文罗盘，直接调全部阈值/开关。阈值与检查项改动保存后**即时生效**；计费定价 6 字段（`cacheHitDiscount` / `inputPricePerM` / `priceSource` / `priceUrl` / `priceFallbackUrl` / `priceRefreshHours`）改动需**重启**生效（挂载时冻结 PriceCache）。仅本机 loopback 部署支持本地写持久化。
+
 ```ts
 // thresholds: 判定模型参数
 thresholds: {
