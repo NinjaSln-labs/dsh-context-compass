@@ -1,7 +1,8 @@
 # C2 设计定稿 — Client 配置卡片（`settings.plugin.item` keyed 自建）
 
-> 状态：**设计定稿已出，待实施**（实施待 dsh 0.1.2 发版后；ROADMAP 记为 C2，见 `docs/ROADMAP.md`）
+> 状态：**已实施（0.12.0，2026-09-06）**。原方案（自建 RPC 转发 `settings-describe`/`settings-mutate`）经 5 轮评审后重写：宿主 `settingsScope.bind()` 直接支持多段 path mutate + revision fence，无需自建 RPC。实际实现见 `src/client/settings-card/`。
 > 调研基准：harness `0.1.1-rc.2`（live）· `@deepseek-ai/dsh-settings@0.1.0-rc.6` · `@deepseek-ai/dsh-client-ui-settings@0.1.0-rc.6` · `@deepseek-ai/dsh-client-schema-form@0.1.0-rc.6` · `@deepseek-ai/dsh-client-ui-settings-plugins`（harness 内置，0.1.1-rc.2）
+> 实施基准：harness `0.1.2-alpha.4` · `@deepseek-ai/dsh-client-ui-settings@0.1.2-alpha.4`（settingsScope 通道）
 > 调研日期：2026-08-27
 
 ## 1. 背景与目标
@@ -14,8 +15,9 @@ C1 已把 host 配置点接入 settings namespace `'context-compass'`（嵌套 C
 |---|---|---|
 | F1 | **`settings.plugin.item` 是 keyed slot，key = 卡片所编辑的 settings namespace；owner props 为空**（`SettingsPluginItemOwnerProps.children?: never`，卡片完全自包含、无 props） | dsh-client-ui-settings-plugins `lib/types/client/slot-contract.d.ts`（harness 内置） |
 | F2 | **场外插件不可复用内置卡片的「外观与表单模型」**（bundle 纯净度门禁禁止以值导入）→ 卡片须**自建暂存 + revision 设栅**；但 field 覆盖语义、写入契约是公开的 | settings-plugins README「已知限制」 |
-| F3 | **`ctx.settingsScope`（官方 client 传输）的 `set/unset` 只支持顶层标量字段**（`path: [field]` 单段）→ 不适合嵌套 Config | dsh-client-ui-settings `lib/client.js` L78-96 |
+| F3 | **`ctx.settingsScope`（官方 client 传输）的 `set/unset` 只支持顶层标量字段**（`path: [field]` 单段）→ 不适合嵌套 Config（**事实仍真，但推论失效——见方案变更**） | dsh-client-ui-settings `lib/client.js` L78-96 |
 | F4 | **Host `ctx.settings.mutate(ns, ops, expectedRevision)` 支持完整嵌套 path**（`['thresholds','windowMid']`）+ revision 乐观锁（`SettingsConflictError` code `SETTINGS_CONFLICT`，附 expected/actual） | dsh-settings `lib/types/index.d.ts` |
+| F7 | **`settingsScope.bind({namespace})` 返回的 scope 对象，其 `mutate(ops, revision)` 的 `op.path` 是 `string[]` 多段**（宿主 `applyPathOp` 用 `[head,...rest]` 递归建中间对象）→ 绕过 F3 限制，无需自建 RPC | dsh-settings `lib/settings.js` 实证（card-form.ts 直接消费此通道） |
 | F5 | **`@deepseek-ai/dsh-client-schema-form` 是纯模型层（无 React）**，且已在 build-client.mjs 的 EXTERNAL 表：`rehydrateSchema` / `validateDraft` / `nodeAtPath` / `setPath` / `deletePath` / `hasPath` / `getPath` —— 可复用做 schema 解析与草稿校验 | schema-form README + `package.json` |
 | F6 | Host 侧已有 `/context-compass-rpc`（loopback-only）通道，`ctx.get('settings')` 在 webServer 子 context 可读到 settings 服务 | overview.ts + C1 §3.7 |
 
@@ -34,32 +36,25 @@ ctx.slots.inject('settings.plugin.item', () => ctx.slots.register(
 
 `key = 'context-compass'` 与 host namespace 同名——tab 靠这个 key 把「Host 注册的命名空间」与「浏览器注册的卡片」配对（F1）。
 
-### 3.2 Host 数据面（扩展 `/context-compass-rpc`）
+### 3.2 通道方案变更（实施时修正）
 
-`handleOverviewRpc` 新增两个 method（复用同一 loopback 守卫 + JSON body 解析）：
+> **原设计**：扩展 `/context-compass-rpc`，加 `settings-describe` / `settings-mutate` 两个 method（3.2 节描述）。
+> **实施方案**：5 轮评审后发现宿主 `settingsScope.bind()` 已内置多段 path mutate + revision fence（F7），无需自建 RPC。改为 client 侧直接 inject `settingsScope` 服务 → `bind({namespace:'context-compass'})` → `scope.mutate(ops, revision)`。
+> **变更影响**：§2 事实 F3 的推论（"需 RPC 转发"）失效；F5（schema-form 复用）亦未采用（字段清单硬编码，官方 bash 卡同款 pattern）。自建 RPC 转发段（3.2）废弃，通道改走官方 settingsScope。
 
-- `{ method: 'settings-describe' }` → `ctx.get('settings')?.describe({ redactSecrets: true })` 过滤 `ns === 'context-compass'`，返回 `{ ok, result: { ns, schema, value, base, user, revision, applies, writable } }`；settings 未挂载 → `{ ok:false, error:'settings unavailable' }`
-- `{ method: 'settings-mutate', ns, ops, expectedRevision }` → `ctx.settings.mutate(ns, ops, expectedRevision)`：
-  - 成功 → `{ ok:true }`
-  - `SettingsConflictError` → **409** `{ ok:false, code:'SETTINGS_CONFLICT', expected, actual }`
-  - validate 失败 → **400** `{ ok:false, error }`
+### 3.3 Client 卡片表单（实施方案）
 
-> 选 `mutate` 而非 `update/replace`：卡片持有 `redactSecrets` 后的视图，`replace` 会误删密钥字段；`mutate` 的 path-addressed 语义正是为「redacted view」设计的写路径（dsh-settings README）。
+组件通过 `settingsScope.bind({namespace:'context-compass'})` 拿 scope，不拉 descriptor：
 
-### 3.3 Client 卡片表单
-
-组件自 fail 态 fetch `settings-describe` 拉 descriptor：
-
-1. **schema 解析**：`rehydrateSchema(descriptor.schema)` → 活校验器（F5，规避自解析 schemastery envelope）
-2. **字段渲染（自建控件）**：按 Config 分组手写控件——
+1. **字段清单硬编码**（`src/client/settings-card/fields.ts`）：按 Config 分组手写 22 个 FieldSpec——
    - `thresholds`（8 项 number）：`windowMid / windowHigh / windowCritical / economyTokenFloor / economyWindowRatio / economyRoundFloor / messageCountProxy / messageCountWindowRatio`
-   - `checks`（5 项）：`git.enabled`(bool) + `git.workspaceRoot`(string)、`handoff.enabled`(bool) + `handoff.paths`(string[])、`sessionResume.enabled`(bool)、`processes.enabled`(bool)、`knowledge.enabled`(bool)
+   - `checks`（7 项）：`git.enabled`(bool) + `git.workspaceRoot`(string)、`handoff.enabled`(bool) + `handoff.paths`(strings)、`sessionResume.enabled`(bool)、`processes.enabled`(bool)、`knowledge.enabled`(bool)
    - `projection.enabled`(bool)
    - `cost`（6 项）：`cacheHitDiscount / inputPricePerM`(number)、`priceSource`(select auto/static)、`priceUrl / priceFallbackUrl`(string)、`priceRefreshHours`(number)
-3. **草稿暂存**：本地 state，控件渲染暂存文本；保存时才发 `settings-mutate`（脏标记：草稿 ≠ 已存）
-4. **覆盖标记与重置**：`hasPath(user, path)` 判定字段是否被覆盖；「重置」= `{ op:'unset', path }` 回退到 `base`/schema 默认
-5. **revision 设栅**：保存携带 `describe` 的 `revision`；**409** 时提示「配置已被其它会话修改」，重读 descriptor 并保留草稿（F4）
-6. **校验**：写前 `validateDraft`（F5）+ 依赖 Host `validate` 兜底（单调性 / 有限性，C1 已落）
+2. **草稿暂存**（`card-form.ts`）：`CompassCardForm` 类，判别联合 `{kind:'text'} | {kind:'bool'} | {kind:'clear'}`；parseField 范围校验（0-1 / 整数 / select 选项）；thresholdError 单调性（mid < high < critical）
+3. **覆盖标记与重置**：`hasAtPath(user, path)` 判定字段是否被覆盖；「重置」= `{ op:'unset', path }` 回退到 composition base 层
+4. **revision 设栅**：保存携带 scope 当前 `revision`；写失败（mutate 不 reject，但回读 user 层 missing）→ `failed=true`，草稿保留
+5. **校验**：写前 parseField 拒非法（范围/选项）+ thresholdError 拒非单调；Host `validate` 兜底（单调性写时拒绝）
 
 ### 3.4 字段 → 写入 ops 映射
 
@@ -74,17 +69,27 @@ ops = [
 ]
 ```
 
-## 4. 风险与未决
+## 4. 风险与未决（实施后状态）
 
-| 风险 | 缓解 |
+| 风险 | 状态 |
 |---|---|
-| R1 `settings.plugin.item` 渲染上下文（卡片何时出现、tab 是否 dispatch 本 key）需实测 | owner props 为空 + 卡片自 fetch 不依赖 props；实施 T1 先打桩确认 describe 返回的形状 |
-| R2 `rehydrateSchema` 执行 `new Function`（schema-form README 已知限制） | 同源信任（describe 来自本机 loopback RPC）；可接受 |
-| R3 `describe` 返回的 `schema` 信封结构（schemastery `toJSON`）不稳定 | 全部经 `rehydrateSchema` 还原，不自解析；T1 实测形状 |
-| R4 settings 未挂载（headless） | describe 返回 `settings unavailable`，卡片渲染「配置不可用」空态 |
+| R1 `settings.plugin.item` 渲染上下文 | ✅ 已实测：卡片正常出现在设置 → 插件配置页 |
+| R2 `rehydrateSchema` 执行 `new Function` | ✅ 不适用（方案改用硬编码 FieldSpec，不走 schema-form） |
+| R3 `describe` schema 信封 | ✅ 不适用（方案改用硬编码 FieldSpec，不走 schema 解析） |
+| R4 settings 未挂载（headless） | ✅ 已处理：`scope.getSnapshot().status === 'unavailable'` → 整卡 null |
+| 新风险：`settingsScope` 注入死锁 | ✅ 已处理：client-mount stub 与 inject 变更同步加（见 pits） |
+| 新风险：`mutate` 参数逆变 cast | ✅ 已处理：双 cast（as unknown as）保证通过，形状契约经实证 |
 
-## 5. 实施切分（定稿后）
+## 5. 实施记录（已落地，原计划废弃）
 
-1. **T1**：Host `handleOverviewRpc` 加 `settings-describe` / `settings-mutate` 转发 + smoke 测试（describe 形状 / mutate 嵌套 path / 409 冲突 / 400 校验失败）
-2. **T2**：Client 卡片组件（schema-form 复用 + 自建控件 + 草稿 + revision 设栅）+ 注册 slot + client-mount 入口断言
-3. **T3**：README/ROADMAP/HANDOFF（本地私有未追踪）回填 + 发版 0.12.0
+> 原定 3 任务切分（T1 host RPC / T2 client 组件 / T3 文档发版）已废弃。实际按重写版计划 `docs/superpowers/plans/2026-09-04-c2-settings-card.md` 的 Task 1-8 落地，最终交付 **0.12.0**。
+>
+> **实际 Task 对应**：
+> - T1（依赖/类型面）：package.json peer/devDep + ambient.d.ts → commit `e77284e`
+> - T2（Slot + inject + stub）：client.tsx SlotMap + inject + client-mount stub → commit `e77284e`
+> - T3（fields.ts）：22 字段全量 + readAtPath/hasAtPath → commit `e77284e`
+> - T4（card-form.ts）：CompassCardForm 草稿控制器 + parseField + thresholdError → commit `e77284e`
+> - T5（index.ts）：createSettingsCard 组装 → commit `e77284e`
+> - T6（card.tsx + styles.ts）：React UI + 官方壳样式 + 真组件注册 → commit `e77284e`
+> - T7（集成验证）：file: 安装 + 本机实测（待浏览器验收）
+> - T8（文档回填 + 发版）：README/ROADMAP/PUBLISHING/C2-DESIGN 更新 → 本 commit
