@@ -54,6 +54,7 @@ Backlog ──Sprint 计划──▶ 设计决策 ──▶ 实现 ──▶ DoD
 - [ ] 用户故事描述的行为可复现（手动走一遍）
 - [ ] 端到端验收任务跑通
 - [ ] **本机测试**：改了 `src/`/`lib/` 后按部署纪律 `file:` 安装 + 重启 profile，对运行中 harness 实测验收（纪律参照 dsh-subagent-router 的 DoD「真机/实测闭环」——无运行中验证 = 未做完）
+- [ ] **视觉门禁带 token 跑**：把 `DSH_WEB_URL` 设成 dsh web 启动时打印的**带 token 完整 URL**（本机有取该 URL 的辅助脚本 `dsh-web-url`），再 `npm run visual`。dsh web 无登录、靠一次性 `?token=` 换 cookie，无 token → 401；**不带 token 时 6 项全部 90s 超时失败，看现象像断言坏了，实为门禁根本没进门**。改过客户端视觉相关代码后必须真跑一次，`visual` 不在 `npm run test` 内
 - [ ] 边界条件处理明确（空/并发/超时/取消/重启）
 
 ### 质量 DoD（AI 风险检查）
@@ -157,6 +158,8 @@ git config core.hooksPath .githooks
 | 罗盘一览与侧边栏会话数不一致 | 面板多出无工作区/空标题冷会话 | 一览走 workspaceRegistry 过滤 + blank 冷会话过滤（对齐 sidebar 数据源） |
 | blank 代理判定漂移（无标题≠blank，60s TTL 过期后空行闪现） | 面板比侧边栏多 1 行真空壳会话，重开面板首帧必闪现 | **0.11.5 方案 A**：blank 真值改从宿主聚合层 `sessionController.list()` 的 `sessionListMetadata.blank` 投影取（侧边栏渲染的就是这份列表）——挂载预热 + 请求帧 SWR 刷新，首帧即裁剪；代理路径仅作真值缺席时的降级 |
 | **宿主 Remote 返回形状没查契约就猜**（0.11.5 事故，方案 A 未生效） | 面板「看似对上」实未生效——`fetchBlankTruth` 按裸数组写 `Array.isArray`，但 `sessionController.list()` 真返回 `{ items: [...] }`（`SessionListValue`）→ 恒 false，真值图空，靠 legacy blankCache 掩盖，进程重启即露馅（16→6 闪现） | **0.11.6**：读 `result.items`（防御兼容两种形态）+ `list({}, signal)` 正确占位；测试 stub 按宿主真实 `{items}` 契约写（**切勿用裸数组 stub 掩盖契约形状**）；挂载预热 `warmBlankTruth` 带重试（service 晚挂载 → no-op 致首帧闪现） |
+| 视觉门禁没带 token（dsh web 需一次性 `?token=`） | 6 项全部 90s 超时，报 `waiting for locator('.sh-fa')`，page snapshot 是「authentication required」——看着像断言坏了 | 跑前把 `DSH_WEB_URL` 设成带 token 的完整 URL（辅助脚本 `dsh-web-url` 可取）；`visual/helpers.mjs` 的 `gotoApp()` 负责整串导航一次换 cookie（相对路径导航会丢 query，**所有 spec 的 beforeEach 必须走 `gotoApp`**） |
+| 视觉基线依赖「环境默认主题」 | 拍出的 `panel-light-*.png` 实为深色图（与 `panel-dark-*.png` 字节完全相同），light 断言必失败 | 每个截图测试**自带主题前置** `setTheme(page,'light'/'dark')`，不得假设宿主当前主题；`panel-light-darwin.png` 为历史失真基线，待 mac 上 `visual:update` 重建 |
 
 ## 维护
 

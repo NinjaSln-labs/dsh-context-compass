@@ -12,9 +12,23 @@
  */
 import { expect } from '@playwright/test'
 
+/**
+ * Navigate to the app shell.
+ * dsh web 无登录、靠启动时打印的一次性 `?token=` 换 cookie（无 token → 401）；
+ * baseURL 拼相对路径时 query 会被丢掉，所以带 token 的入口必须整串导航一次
+ * （303 + Set-Cookie 之后，后续相对导航即可复用 cookie）。所有 spec 走这里。
+ */
+export async function gotoApp(page) {
+  const entry = process.env.DSH_WEB_URL
+  if (entry !== undefined && entry.includes('token=')) {
+    await page.goto(entry, { waitUntil: 'domcontentloaded' })
+  }
+  await page.goto('/', { waitUntil: 'domcontentloaded' })
+}
+
 /** Wait for the app shell, then open a real (non-new) session. */
 export async function openSession(page) {
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await gotoApp(page)
   if (await page.locator('.sh-badge').count() > 0) return
   // Session rows: div.sessionRow* — the "new session" row is the SELECTED
   // one; any other row materializes a real session. Titles differ by locale

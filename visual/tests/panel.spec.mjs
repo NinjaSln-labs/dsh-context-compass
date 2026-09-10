@@ -7,13 +7,17 @@
  */
 import { test, expect } from '@playwright/test'
 import { FIVE_TIER_ROWS, SIX_ROW_PAYLOAD, rpcPayload } from '../fixtures/overview.mjs'
-import { mockOverview, openOverview, setTheme, settle } from '../helpers.mjs'
+import { mockOverview, openOverview, setTheme, settle, gotoApp } from '../helpers.mjs'
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/', { waitUntil: 'domcontentloaded' })
+  await gotoApp(page)
 })
 
 test('panel light: 四档矩阵 + 固定 5 行高度 + 行序', async ({ page }) => {
+  // 显式切浅色：此前本测试不设主题，依赖「宿主默认是浅色」——宿主主题存在用户
+  // settings 里（本机为深色），于是拍出的 light 基线其实是深色图（与 dark 基线
+  // 字节完全相同，2026-09-10 发现）。视觉断言必须自带主题前置。
+  await setTheme(page, 'light')
   await mockOverview(page, rpcPayload(FIVE_TIER_ROWS))
   await openOverview(page)
   await settle(page)

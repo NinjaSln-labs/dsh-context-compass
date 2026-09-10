@@ -594,5 +594,52 @@ function mergeUserInto(target, source) {
   console.log('  ok  card-form: parseField select validation')
 }
 
+// 6q) controlFor —— 渲染的唯一来源（0.12.1：FieldControl 直接消费本函数，断言即渲染契约）
+{
+  const { controlFor, saveBlocked, discardBlocked } = await import('../lib/client/settings-card/card.js')
+  const spec = key => CF_FIELDS.find(f => f.path.join('.') === key)
+  const field = { text: '', checked: false, invalid: false }
+
+  const numberSpec = spec('thresholds.windowMid')
+  assert.ok(numberSpec, 'controlFor: number field exists')
+  assert.deepEqual(
+    controlFor(numberSpec, { ...field, text: '0.5' }),
+    { type: 'text', inputMode: 'decimal', text: '0.5' },
+    'controlFor: number → text + inputMode decimal（小数点可输入）',
+  )
+
+  const boolSpec = spec('checks.handoff.enabled')
+  assert.ok(boolSpec, 'controlFor: boolean field exists')
+  assert.deepEqual(
+    controlFor(boolSpec, { ...field, checked: true }),
+    { type: 'checkbox', checked: true },
+    'controlFor: boolean → checkbox with checked',
+  )
+
+  const selectSpec = spec('cost.priceSource')
+  assert.ok(selectSpec, 'controlFor: select field exists')
+  const selectControl = controlFor(selectSpec, field)
+  assert.equal(selectControl.type, 'select', 'controlFor: select → select')
+  assert.equal(selectControl.options, selectSpec.options, 'controlFor: select 透传 spec 选项（同源）')
+
+  const stringSpec = spec('checks.git.workspaceRoot')
+  assert.ok(stringSpec, 'controlFor: string field exists')
+  assert.deepEqual(
+    controlFor(stringSpec, { ...field, text: 'x' }),
+    { type: 'text', inputMode: undefined, text: 'x' },
+    'controlFor: string → text 不带 inputMode',
+  )
+
+  assert.equal(saveBlocked({ dirty: true, invalid: false, saving: false }), false, 'saveBlocked: 干净可存')
+  assert.equal(saveBlocked({ dirty: true, invalid: true, saving: false }), true, 'saveBlocked: 非法禁存')
+  assert.equal(saveBlocked({ dirty: false, invalid: false, saving: false }), true, 'saveBlocked: 无改动禁存')
+  assert.equal(saveBlocked({ dirty: true, invalid: false, saving: true }), true, 'saveBlocked: 保存中禁存')
+
+  // 回归：0.12.1 前 discard 复用 saveBlocked，非法草稿时用户被锁死无法放弃
+  assert.equal(discardBlocked({ saving: false }), false, 'discardBlocked: 非法草稿仍可放弃（逃生通道）')
+  assert.equal(discardBlocked({ saving: true }), true, 'discardBlocked: 保存中禁放弃')
+  console.log('  ok  card: controlFor / saveBlocked / discardBlocked（渲染单一来源 + 放弃通道）')
+}
+
 console.log('\nclient mount smoke passed')
 process.exit(0)

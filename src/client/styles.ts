@@ -3,7 +3,7 @@ export const CSS = `
 .sh-wrap{position:relative;display:inline-flex}
 .sh-badge{display:inline-flex;align-items:center;justify-content:center;height:32px;padding:6px 12px;gap:6px;border:1px solid var(--dsw-alias-border-l2);border-color:var(--sh-accent,var(--dsw-alias-border-l2));border-radius:18px;color:var(--dsw-alias-label-secondary);background:transparent;font-size:13px;font-weight:400;line-height:20px;box-sizing:border-box;cursor:pointer;user-select:none;white-space:nowrap}
 .sh-badge:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-badge:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:2px}
+.sh-badge:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .sh-badge .sh-dot{width:10px;height:10px;border-radius:50%;flex:none;background:var(--sh-accent,var(--dsw-alias-label-secondary))}
 /* Severity palette — three theme-adaptive roles per tier:
    --sh-accent (dot/border/bar), --sh-ink (severity text), --sh-tint (chip bg).
@@ -28,7 +28,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-tip-row .sh-v{color:var(--dsw-alias-label-secondary);margin-left:auto;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0}
 .sh-cost-toggle{cursor:pointer;border-radius:4px}
 .sh-cost-toggle:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-cost-toggle:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-cost-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .sh-bar{flex:1;height:6px;border-radius:3px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;max-width:110px}
 .sh-bar-fill{height:100%;border-radius:3px;display:block;background:var(--sh-accent,var(--dsw-alias-label-secondary))}
 /* R1 占用趋势 sparkline：占用行下方的迷你折线（主题色随 severity accent）。 */
@@ -38,12 +38,12 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-tip-copy-row{margin-top:8px;display:flex}
 .sh-tip-copy{border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;padding:3px 10px;cursor:pointer;flex:none}
 .sh-tip-copy:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-tip-copy:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-tip-copy:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .sh-tip-copy-done{color:var(--dsw-alias-state-success-primary);border-color:var(--dsw-alias-state-success-primary)}
 /* 浮层信息分层（B2）：「更多详情」折叠次要行。 */
 .sh-tip-more{margin-top:6px;border:none;background:none;padding:0;color:var(--dsw-alias-label-tertiary);font-size:11px;cursor:pointer;text-align:left}
 .sh-tip-more:hover{color:var(--dsw-alias-label-primary)}
-.sh-tip-more:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px;border-radius:3px}
+.sh-tip-more:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:3px}
 /* 压缩后判定滞后提示：severity 判定基于压缩前压力，占用条已按下次请求重估——
    差异超过阈值时标注「下次请求后更新」（theme-adaptive warn tint）。 */
 .sh-tip-lag{margin-top:8px;padding:6px 10px;border-radius:8px;font-size:12px;line-height:1.5;color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 45%,var(--dsw-alias-label-primary));background:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 12%,transparent)}
@@ -61,7 +61,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
    Session rail icon (36px, borderless, hover tint). */
 .sh-fa{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;gap:6px;height:38px;padding:8px 16px;margin:0 2px 8px;width:100%;border:1px solid var(--dsw-alias-border-l2);border-radius:12px;background:var(--dsw-alias-button-elevated-fill);color:var(--dsw-alias-label-primary);font-size:14px;font-weight:500;line-height:22px;flex:none;cursor:pointer;user-select:none;white-space:nowrap;overflow:hidden}
 .sh-fa:hover{background:var(--dsw-alias-button-floating-hover)}
-.sh-fa:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:2px}
+.sh-fa:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .sh-fa .sh-fa-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--dsw-alias-label-tertiary)}
 .sh-fa-rail{width:36px;height:36px;padding:0;margin:0 0 12px;align-self:flex-start;border-color:transparent;background:transparent}
 .sh-fa-rail:hover{background:var(--dsw-alias-interactive-bg-hover)}
@@ -76,7 +76,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-panel-sub{font-size:12px;color:var(--dsw-alias-label-tertiary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sh-panel-close{flex:none;width:28px;height:28px;border:none;border-radius:8px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:16px;line-height:1;cursor:pointer}
 .sh-panel-close:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-panel-close:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-panel-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 /* The list keeps the height of exactly 5 rows whether or not there are 5 —
    the panel never resizes (no visual jump when sessions come and go). */
 .sh-panel-list{overflow-y:auto;padding:8px 0;flex:none;overscroll-behavior:contain;height:calc(41px * 5 + 16px);box-sizing:border-box}
@@ -88,11 +88,11 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-col-head{border:none;background:transparent;color:inherit;font:inherit;padding:0;cursor:pointer;text-align:left;border-radius:4px;display:inline-flex;align-items:center;gap:3px}
 .sh-panel-head-row .sh-row-num.sh-col-head{justify-content:flex-end;width:100%}
 .sh-col-head:hover{color:var(--dsw-alias-label-primary)}
-.sh-col-head:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-col-head:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .sh-col-head.sh-sort-active{color:var(--dsw-alias-label-primary);font-weight:600}
 .sh-panel-row{display:grid;gap:14px;align-items:center;width:100%;height:41px;padding:0 16px;border:none;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);text-align:left;cursor:pointer;box-sizing:border-box;font-size:12px;line-height:1.4}
 .sh-panel-row:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-panel-row:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-panel-row:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 /* Severity as a tinted chip (theme-adaptive tint/ink from the palette). */
 .sh-sev-chip{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;background:var(--sh-tint,transparent);color:var(--sh-ink,var(--dsw-alias-label-secondary));font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;width:fit-content}
 .sh-row-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--sh-accent,var(--dsw-alias-label-tertiary))}
@@ -115,7 +115,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-ccard-state{font-size:12px;color:var(--dsw-alias-label-tertiary)}
 .sh-ccard-toggle{border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:11px;padding:2px 8px;cursor:pointer;flex:none}
 .sh-ccard-toggle:hover{background:var(--dsw-alias-interactive-bg-hover)}
-.sh-ccard-toggle:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-ccard-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .sh-ccard-reason{font-size:12px;line-height:1.6}
 .sh-ccard-metrics{display:flex;flex-wrap:wrap;gap:4px 14px}
 /* 短 metric 单行、长 metric（如跨会话回顾快照）可折行——绝不撑破卡片。 */
@@ -134,7 +134,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-pager-btn{width:22px;height:22px;border:1px solid var(--dsw-alias-border-l2);border-radius:6px;background:transparent;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1;cursor:pointer;padding:0}
 .sh-pager-btn:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover)}
 .sh-pager-btn:disabled{opacity:.4;cursor:default}
-.sh-pager-btn:focus-visible{outline:2px solid var(--dsw-alias-state-primary);outline-offset:1px}
+.sh-pager-btn:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 .sh-pager-info{font-variant-numeric:tabular-nums;min-width:34px;text-align:center}
 .sh-foot-hint{margin-left:auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sh-cf-card{border:0.5px solid var(--dsw-alias-border-l4);border-radius:16px;background:var(--dsw-alias-bg-layer-3);padding:10px 14px;display:flex;flex-direction:column;gap:10px}
@@ -153,7 +153,7 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-cf-label{font-size:13px;font-weight:500;color:var(--dsw-alias-label-primary)}
 .sh-cf-reset{margin-left:auto;background:transparent;border:none;color:var(--dsw-alias-label-tertiary);font-size:12px;cursor:pointer}
 .sh-cf-reset:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px;border-radius:4px}
-.sh-cf-restart{color:var(--dsw-alias-label-tertiary);font-size:12px;margin-left:auto}
+.sh-cf-restart{color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px;padding:1px 8px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);margin-left:auto;flex:none}
 .sh-cf-hint{color:var(--dsw-alias-label-tertiary);font-size:12px}
 .sh-cf-error{color:var(--dsw-alias-state-error-primary);font-size:12px}
 .sh-cf-checkbox{width:16px;height:16px;margin:0;accent-color:var(--dsw-alias-brand-primary)}

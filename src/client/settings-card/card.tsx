@@ -8,25 +8,37 @@ import * as React from 'react'
 import { GROUPS, type FieldSpec } from './fields.ts'
 import type { CompassCardState } from './index.ts'
 
-/** 控件形态纯函数：client-mount 可通过 lib 产物断言。 */
+/**
+ * 控件形态纯函数——**渲染的唯一来源**：FieldControl 直接消费本函数的返回值，
+ * 不再另写一套 kind 分支；client-mount 对同一函数断言，杜绝「测的函数与渲染的函数
+ * 是两份」（0.12.1 修：此前渲染写死 decimal、本函数返回 numeric，二者从未一致）。
+ * number 用 decimal：这些字段的合法值含小数点（0.5 / 0.28），numeric 在移动端键盘上取不到小数点。
+ */
 export function controlFor(spec: FieldSpec, field: { text: string; checked: boolean; invalid: boolean }) {
   switch (spec.kind) {
     case 'boolean':
-      return { type: 'checkbox', checked: field.checked }
+      return { type: 'checkbox' as const, checked: field.checked }
     case 'number':
-      return { type: 'text', inputMode: 'numeric' as const, text: field.text }
-    case 'strings':
-      return { type: 'text', text: field.text }
+      return { type: 'text' as const, inputMode: 'decimal' as const, text: field.text }
     case 'select':
-      return { type: 'select', options: spec.options ?? [] }
+      return { type: 'select' as const, options: spec.options ?? [] }
     default:
-      return { type: 'text', text: field.text }
+      return { type: 'text' as const, inputMode: undefined, text: field.text }
   }
 }
 
 /** 保存按钮 blocked 判定：!dirty || invalid || saving。 */
 export function saveBlocked(state: Pick<CompassCardState, 'dirty' | 'invalid' | 'saving'>): boolean {
   return !state.dirty || state.invalid || state.saving
+}
+
+/**
+ * 放弃按钮 blocked 判定：**只看 saving**。
+ * 0.12.1 修：此前复用 saveBlocked → invalid 草稿时「放弃」也被禁用，用户被锁在一份
+ * 非法草稿里（唯一出路是手工改回合法值）。放弃是逃生通道，任何非法草稿都必须能丢。
+ */
+export function discardBlocked(state: Pick<CompassCardState, 'saving'>): boolean {
+  return state.saving
 }
 
 const SAVE_FAILED_TEXT = '本部署没有接受这些值，已保留供你修改。'
@@ -46,18 +58,19 @@ function FieldControl(props: {
   const hintId = `cf-${key}-hint`
   const errorId = `cf-${key}-error`
   const describedBy = [spec.hint ? hintId : undefined, field.error ? errorId : undefined].filter(Boolean).join(' ') || undefined
-  if (spec.kind === 'boolean') {
+  const control = controlFor(spec, field)
+  if (control.type === 'checkbox') {
     return React.createElement('input', {
       type: 'checkbox',
       id: fieldId,
-      checked: field.checked,
+      checked: control.checked,
       disabled,
       onChange: (e: React.ChangeEvent<HTMLInputElement>) => onToggle(key, e.target.checked),
       className: 'sh-cf-checkbox',
       'aria-describedby': describedBy,
     })
   }
-  if (spec.kind === 'select') {
+  if (control.type === 'select') {
     return React.createElement(
       'select',
       {
@@ -69,14 +82,14 @@ function FieldControl(props: {
         'aria-describedby': describedBy,
         'aria-invalid': field.invalid || undefined,
       },
-      ...(spec.options ?? []).map(o => React.createElement('option', { key: o.value, value: o.value }, o.label)),
+      ...control.options.map(o => React.createElement('option', { key: o.value, value: o.value }, o.label)),
     )
   }
   return React.createElement('input', {
     id: fieldId,
     type: 'text',
-    inputMode: spec.kind === 'number' ? 'decimal' : undefined,
-    value: field.text,
+    inputMode: control.inputMode,
+    value: control.text,
     disabled,
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => onEdit(key, e.target.value),
     className: field.invalid ? 'sh-cf-invalid sh-cf-input' : 'sh-cf-input',
@@ -172,7 +185,7 @@ export function SettingsCard(props: {
             React.createElement('button', {
               type: 'button',
               className: 'sh-cf-discard',
-              disabled: saveBlocked(state),
+              disabled: discardBlocked(state),
               onClick: () => props.actions.discard(),
               'aria-label': '放弃当前修改',
             }, '放弃'),

@@ -2,11 +2,11 @@
 
 **2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-09-06 更新）
+## 发布状态（2026-09-10 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.12.0`（latest，OIDC 发布，带 provenance）——C2 配置卡片完整实施（settingsScope 通道，22 字段全量，13 组 card-form 单测） |
+| npm | ✅ `dsh-context-compass@0.12.1`（latest，OIDC 发布，带 provenance）——C2 卡片遗留审计项收口（discard 逃生通道 / controlFor 渲染单一来源 / focus 描边 token 修复 / restartNote pill） |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
 | 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC **首帧即 7 行且三帧稳定**（无 16→6 闪现），与侧边栏真值逐 id 对账全等（0.11.6 rc1，2026-09-03） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
@@ -14,6 +14,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.12.1** — **C2 卡片遗留审计项收口**（2026-09-10）：四项 ①**`discard` 逃生通道**——此前「放弃」复用 `saveBlocked` 判定，非法草稿时与「保存」一起被禁用，用户被锁在非法草稿里（唯一出路是手工改回合法值）；改为只看 `saving` 的 `discardBlocked`，任何非法草稿都能放弃；②**`controlFor` 从死代码变为渲染唯一来源**——`FieldControl` 直接消费其返回值，此前渲染另写一套 kind 分支（测的函数与渲染的函数是两份，且渲染取 `decimal`、本函数返回 `numeric` 从未一致），number 统一 `decimal`（这些字段合法值含小数点 0.5 / 0.28）；③**focus 描边 token 修复**——`--dsw-alias-state-primary` 在宿主主题中不存在（权威清单 Client `Theme.listTokens` 13 个 token 无此项，theme 包内 0 次出现），`src/client/styles.ts` 10 处 `:focus-visible` 全部改宿主已定义的 `--dsw-alias-brand-primary`（0.12.0 的 `.sh-cf-*` 块本就正确，HANDOFF 记的「brand-primary 未定义」系误判，本轮用 Inspect 权威清单证伪）；④**`restartNote` 裸文本 → pill**（`bg-layer-2` 底 + `label-secondary` 字，与字段 label 视觉区分）。client-mount +1 组断言（controlFor 四形态 / saveBlocked 四态 / discardBlocked 回归）。测试规模：smoke 130 + mount 7 + client-mount 24 + visual 6
 
 - **0.12.0** — **C2 配置卡片完整实施**（2026-09-06）：原设计定稿（`docs/C2-SETTINGS-CARD-DESIGN.md`）的自建 RPC 转发方案经 5 轮评审后重写为干净版——宿主 `settingsScope.bind({namespace})` 直接支持多段 path mutate + revision fence，无需自建 `/context-compass-rpc` 转发。Client 侧 `inject: ['settingsScope']` → `compassSettingsScope.bind({namespace:'context-compass'})` → `CompassCardForm` 草稿判别联合（text/bool/clear）+ parseField 范围校验（0-1 / 整数 / select 选项）+ thresholdError 单调性（mid < high < critical）；22 字段全量按 4 组分 section 布局；可访问性补 id/htmlFor/aria-describedby/aria-invalid/aria-expanded/aria-controls/role=status aria-live；官方壳样式 `.sh-cf-*` 块；13 组 card-form 纯逻辑单测 + client-mount 座位断言。peer 新增 `@deepseek-ai/dsh-client-ui-settings: ^0.1.2-alpha.4`，dsh.client.inject 末尾追加。测试规模：smoke 130 + mount 7 + client-mount 23 + visual 6
 

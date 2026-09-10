@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.12.0**（2026-09-06 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.12.1**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 
@@ -27,7 +27,7 @@
 ### 质量
 
 - **十二轮审计**：51 fixed + 25 recorded（0 残留）
-- **160 项自动化测试全绿**：130 smoke + 7 mount + 23 client-mount（含 13 组 card-form 纯逻辑单测）+ 6 visual（0.12.0 时点复核）
+- **167 项自动化测试全绿（0.12.1 时点复核）**：130 smoke + 7 mount + 24 client-mount（含 13 组 card-form 纯逻辑单测 + controlFor/saveBlocked/discardBlocked 渲染单一来源断言）+ 6 visual
 
 ### 稳定性基建（0.8.0 先行落地）
 
@@ -53,6 +53,11 @@
 - **测试** — smoke +3（validate 单调 / readConfig 双形态 / thunk 换层即时生效）+ mount +1（**真实接线集成**：settings 写入 → 工具判定 live 变化 + validate 拒绝非单调——该测试抓到 `as` 强转压掉 thunk 未调用的真 bug，见 pits 2026-08-26）
 - **测试规模** — smoke 107 + mount 6 + client-mount 7 + visual 6
 - **S4 canary 发布通道（顺带交付）** — `publish.yml`：prerelease 版本（`0.10.1-next.0` 形态，tag 同后缀）自动 `npm publish --tag next`（不动 latest）；新增 `canary-promote.yml`（workflow_dispatch 输入版本号 → 守卫 prerelease/存在性 → `npm dist-tag add … latest`，走同一 npm-publish 审批门）；流程文档入 `PUBLISHING.md`
+
+### 0.12.1 C2 卡片遗留项收口
+
+- **C2 卡片遗留审计项收口**——四项：①`discard` 逃生通道（此前复用 `saveBlocked`，非法草稿时「放弃」与「保存」一起禁用，用户被锁死；改为只看 `saving` 的 `discardBlocked`）；②`controlFor` 由死代码变为**渲染唯一来源**（`FieldControl` 直接消费返回值，消除「测的函数 ≠ 渲染的函数」双份实现，number 统一 `inputMode: 'decimal'`）；③focus 描边 token 修复（`--dsw-alias-state-primary` 宿主主题不存在 → 10 处 `:focus-visible` 改 `--dsw-alias-brand-primary`；0.12.0 的 `.sh-cf-*` 块本就正确）；④`restartNote` 裸文本 → pill。client-mount +1 组断言
+- **测试规模** — smoke 130 + mount 7 + client-mount 24 + visual 6
 
 ### 0.12.0 C2 配置卡片
 
@@ -111,6 +116,7 @@
 | ~~0.9.0~~ | R1 sparkline（已交付）· C1 调研 + 设计定稿（已交付）|
 | **0.10.0** | **C1 host 配置点接入（已交付，随本版发）**——`installSettingsSection` getter 模式：thresholds/checks live 生效、resolveConfig 双源治愈、validate 三档单调、projection.enabled live 切换；pricing 源 4 字段 restart |
 | **0.12.0** | **C2 client 配置卡片（已交付）**——`settingsScope` 通道（官方 client inject + bind，多段 path mutate + revision fence），22 字段全量（阈值 8 / 检查项 7 / 投影 1 / 计费 6），草稿暂存 + parseField 范围校验 + thresholdError 单调性，可访问性 aria，官方壳样式对齐；13 组 card-form 纯逻辑单测 |
+| **0.12.1** | **C2 卡片遗留项收口（已交付）**——discard 逃生通道 / controlFor 渲染单一来源 / focus token 修复 / restartNote pill；client-mount +1 组断言 |
 | **后续** | R3 / R4 / R5 / R6 · B1 / B2（等依赖就绪）|
 
 ## 维护规则
