@@ -21,3 +21,6 @@ docs/superpowers/
 .scaffold-update/
 .scaffold-merge/
 .scaffold/conflicts/
+
+# 仓库标准化审计输出（本机生成物：report.json 含本机绝对路径，按部署纪律第 5 条不入库）
+audit-report/
