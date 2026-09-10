@@ -6,7 +6,7 @@
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.12.1`（latest，OIDC 发布，带 provenance）——C2 卡片遗留审计项收口（discard 逃生通道 / controlFor 渲染单一来源 / focus 描边 token 修复 / restartNote pill） |
+| npm | ✅ `dsh-context-compass@0.12.2`（latest，OIDC 发布，带 provenance）——升级体检（dsh 0.1.5-rc.1）+ 修「冷会话检查点健康读自 0.11.1 起静默失效」 |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
 | 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC **首帧即 7 行且三帧稳定**（无 16→6 闪现），与侧边栏真值逐 id 对账全等（0.11.6 rc1，2026-09-03） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
@@ -14,6 +14,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.12.2** — **升级体检（dsh 0.1.2-alpha.4 → 0.1.5-rc.1）+ 冷路径契约修复**（2026-09-10）：①**升级体检全绿**——5 个客户端 slot 全部存在且 seat 全部 occupied/active（含曾被记账为「已移除」的 `conversation.chat.commandview`）、宿主 20 个 `ctx.get` 服务全在、`settings.installSection` / `settingsScope.bind+mutate` / `defineTool` / `CommandDefinition` 签名未变、live 投影数据真实、visual 6/6 且 `panel-dark` 仍逐像素匹配旧版基线（无视觉漂移）→ **本次升级未破坏任何可观测行为**。②**修潜伏三个版本的静默 bug**：冷路径按 0.1.1-rc.2 旧契约写（`cachedSnapshot(meta)` 单参 + `coldSnapshot(id, signal?): Promise` 后台化），而宿主自 0.1.2-alpha.x 起 `cachedSnapshot` 必需第二参 `inheritedEventCount`（内部 `identityOf()` → `SessionLogOffset(v)`，非负安全整数否则 **TypeError**），`coldSnapshot` 改为 `(meta, count, events): ProjectionSnapshot`（**private、同步、调用方自备全量日志，宿主自身零调用点**）。旧写法两处都抛且都被 `try/catch` 吞掉 → **冷会话 health 永远 null**（面板「暂无数据」），而磁盘上 189 个检查点里 173 个是有 `sessionHealth` 的。修法：改调 `cachedSnapshot(rec.header, 0, ['sessionHealth'])`（镜像宿主自身 listing 调用），删掉 `coldSnapshot` 分支与整套异步脚手架（`coldCache`/`coldInFlight`/TTL/单帧上限/`scheduleColdLoad`）——检查点读是**同步零 I/O**，冷行**首帧即有值**，不再有「下一帧补齐」窗口。**测试教训（pits 重演）**：原 stub 写成 `cachedSnapshot: meta => …` + `coldSnapshot: async`（按插件自己的假设），恰好把契约 bug 掩盖了三个版本；现按宿主真实形状复刻（第二参经 `assertLogOffset` 校验、同步返回、不提供 `coldSnapshot`），并加一组回归断言钉住调用实参。**格式代次说明**：`identityMatches` 要求 `formatVersion` 严格相等，170/189 条旧记录缺该字段（宿主刻意「永不相认」——缺格式代次无法证明折叠语义，其标题走 `cachedPredecessorTitle` 兜底）；带 `formatVersion:3`（当前 `SESSION_FORMAT_VERSION`）的 19 条可读，本次面板 6/6 行的检查点均在可读集内。测试规模：smoke 131 + mount 7 + client-mount 24 + visual 6；**视觉门禁适配宿主 0.1.5-rc.1**（侧栏改为按工作区分组的折叠树 → `revealSessionEntry()` 兼容两种形态；`setTheme` 改为切换后断言目标态落定，消除「shell 挂载前读到默认主题 → 提前 return → 拍出错主题图」的竞态）
 
 - **0.12.1** — **C2 卡片遗留审计项收口**（2026-09-10）：四项 ①**`discard` 逃生通道**——此前「放弃」复用 `saveBlocked` 判定，非法草稿时与「保存」一起被禁用，用户被锁在非法草稿里（唯一出路是手工改回合法值）；改为只看 `saving` 的 `discardBlocked`，任何非法草稿都能放弃；②**`controlFor` 从死代码变为渲染唯一来源**——`FieldControl` 直接消费其返回值，此前渲染另写一套 kind 分支（测的函数与渲染的函数是两份，且渲染取 `decimal`、本函数返回 `numeric` 从未一致），number 统一 `decimal`（这些字段合法值含小数点 0.5 / 0.28）；③**focus 描边 token 修复**——`--dsw-alias-state-primary` 在宿主主题中不存在（权威清单 Client `Theme.listTokens` 13 个 token 无此项，theme 包内 0 次出现），`src/client/styles.ts` 10 处 `:focus-visible` 全部改宿主已定义的 `--dsw-alias-brand-primary`（0.12.0 的 `.sh-cf-*` 块本就正确，HANDOFF 记的「brand-primary 未定义」系误判，本轮用 Inspect 权威清单证伪）；④**`restartNote` 裸文本 → pill**（`bg-layer-2` 底 + `label-secondary` 字，与字段 label 视觉区分）。client-mount +1 组断言（controlFor 四形态 / saveBlocked 四态 / discardBlocked 回归）。测试规模：smoke 130 + mount 7 + client-mount 24 + visual 6
 

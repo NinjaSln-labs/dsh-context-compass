@@ -191,6 +191,26 @@ export const cmdDef = healthCommandDefinition(ctx, config)
 export const tool = sessionHealthTool(ctx, config)
 
 /* ---------- multi-session overview fixtures (monolith L1090-1136) ---------- */
+/**
+ * 宿主真实契约的 `SessionLogOffset` 校验复刻（dsh-session/lib/index.js）：
+ * 非「非负安全整数」直接抛 TypeError。检查点桩必须带这一层——0.12.2 前本仓的
+ * cachedSnapshot 桩只收一个参数就返回值，把「插件漏传 inheritedEventCount」这个
+ * 真契约 bug 整整掩盖了三个版本（pits：stub 按自己假设写 = 掩盖契约 bug）。
+ */
+export function assertLogOffset(value) {
+  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+    throw new TypeError(`SessionLogOffset must be a non-negative safe integer, got ${String(value)}`)
+  }
+  return value
+}
+
+/** 记录 cachedSnapshot 的实际调用实参——回归断言「第二参必需且合法」。 */
+export const cacheCalls = []
+export function resetCacheCalls() { cacheCalls.length = 0 }
+
+/** 会话格式版本：`identityOf` 的 formatVersion 来源，桩数据必须带（真实 SessionHeader 必有）。 */
+export const SESSION_FORMAT_VERSION = 5
+
 export const healthOf = (severity, extra = {}) => ({
   severity,
   advice: 'a',
@@ -212,10 +232,10 @@ export const healthOf = (severity, extra = {}) => ({
 export const overviewServices = {
   sessionQuery: {
     listSessions: async () => [
-      { header: { id: 'live-red', createdAt: 100, cwd: '/ws' }, live: true, persisted: true },
-      { header: { id: 'cold-yellow', createdAt: 300, cwd: '/ws' }, live: false, persisted: true },
-      { header: { id: 'cold-unknown', createdAt: 200, cwd: '/ws' }, live: false, persisted: true },
-      { header: { id: 'live-green', createdAt: 400, cwd: '/ws' }, live: true, persisted: true },
+      { header: { id: 'live-red', version: SESSION_FORMAT_VERSION, isSeeded: false, createdAt: 100, cwd: '/ws' }, live: true, persisted: true },
+      { header: { id: 'cold-yellow', version: SESSION_FORMAT_VERSION, isSeeded: false, createdAt: 300, cwd: '/ws' }, live: false, persisted: true },
+      { header: { id: 'cold-unknown', version: SESSION_FORMAT_VERSION, isSeeded: false, createdAt: 200, cwd: '/ws' }, live: false, persisted: true },
+      { header: { id: 'live-green', version: SESSION_FORMAT_VERSION, isSeeded: false, createdAt: 400, cwd: '/ws' }, live: true, persisted: true },
     ],
     readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `T-${id}` } } })),
   },
@@ -229,13 +249,35 @@ export const overviewServices = {
       },
     }),
   },
+  // 宿主契约：cachedSnapshot(meta, inheritedEventCount, keys?) —— 第二参必需且必须是
+  // 非负安全整数（内部 identityOf → SessionLogOffset）。身份按 (formatVersion, createdAt,
+  // cwd, isSeeded, inheritedEventCount) 匹配：任一不符即「无检查点」。
   sessionProjectionCache: {
-    cachedSnapshot: meta => meta.id === 'cold-yellow'
-      ? { values: { sessionHealth: healthOf('yellow', { ratio: 0.6 }) } }
-      : undefined,
-    coldSnapshot: async () => undefined, // cold-unknown stays null
+    cachedSnapshot(meta, inheritedEventCount, keys) {
+      cacheCalls.push({ id: meta?.id, offset: inheritedEventCount, keys })
+      assertLogOffset(inheritedEventCount) // 漏参/错参当场炸（真实宿主行为）
+      const row = CHECKPOINTS[meta?.id]
+      if (row === undefined) return undefined
+      if (row.version !== meta.version) return undefined
+      if (row.isSeeded !== (meta.isSeeded ?? false)) return undefined
+      if (row.inheritedEventCount !== inheritedEventCount) return undefined
+      const values = keys === undefined ? row.values : Object.fromEntries(Object.entries(row.values).filter(([k]) => keys.includes(k)))
+      return Object.keys(values).length === 0 ? undefined : { asOfSeq: row.asOfSeq, values }
+    },
+    // 故意不提供 coldSnapshot：宿主自 0.1.2 起它是 private + 同步 + 三参，
+    // 且宿主自身零调用点。插件再碰它就是回归（会在下方 throwing 用例里炸）。
   },
   sessionTitle: { get: () => undefined }, // force the batch title path
+}
+/** 检查点行：只有 cold-yellow 有；cold-unknown 故意没有（健康应保持 null）。 */
+const CHECKPOINTS = {
+  'cold-yellow': {
+    version: SESSION_FORMAT_VERSION,
+    isSeeded: false,
+    inheritedEventCount: 0,
+    asOfSeq: 12,
+    values: { sessionHealth: healthOf('yellow', { ratio: 0.6 }) },
+  },
 }
 export const overviewCtx = { get: name => overviewServices[name] }
 

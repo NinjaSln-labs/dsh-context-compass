@@ -249,30 +249,53 @@ function scheduleTitleFill(ctx: Context, ids: string[], fillSignal: AbortSignal)
 }
 
 /**
- * Cold-load cache: result-value cache + in-flight dedup, NEVER awaited on the
- * request path.
+ * 检查点读：`sessionProjectionCache.cachedSnapshot(header, inheritedEventCount, keys?)`
+ * 是**同步零 I/O** 的 listing 读——宿主自己的 listing 路径（session-controller /
+ * session-reference / subagent）都是这么取的，本插件镜像同一调用。
  *
- * 0.1.1 起 `sessionProjectionCache.coldSnapshot` 是重操作（cached rows +
- * persistence readFrom tail + registry refold + fail-soft write-back）。本面板
- * 的首帧预算是 200ms——cold load 一律后台化：
- * - 同步读：TTL 内的已解析结果直接进本帧（零等待）；
- * - miss → 后台发起（fire-and-forget，带 in-flight 去重与单帧新增上限），
- *   完成后回填缓存；该行本帧保持 `health: null`，由面板 5s 轮询自然补齐。
- * - 缓存 Promise 不携带单次请求的 AbortSignal（一次请求的 abort 不能污染共享
- *   结果），用独立超时兜底防永久挂起。
+ * 0.12.2 修正：此前按 0.1.1-rc.2 的旧契约写（`cachedSnapshot(meta)` 单参 +
+ * `coldSnapshot(id, signal?): Promise` 后台化），但宿主自 0.1.2-alpha.x 起两处都变了：
+ * `cachedSnapshot` 必需第二参 `inheritedEventCount`，宿主内部 `identityOf()` 会对它执行
+ * `SessionLogOffset(v)`——非「非负安全整数」直接抛 TypeError；`coldSnapshot` 则改为
+ * `(meta, count, events): ProjectionSnapshot`（private、同步、由调用方自备全量日志，
+ * 宿主自身零调用点）。旧写法两处都抛，且都在 try/catch 里 → 被静默吞掉 → 冷会话
+ * health 永远 null（面板「暂无数据」），而磁盘上 173/189 个检查点是有 sessionHealth 的。
+ *
+ * 第二参传 0：`SessionHeader` 不带 inherited 计数，宿主自身的 listing 读也一律传
+ * `SessionLogOffset(0)`（seeded header 传 0 不会抛——`identityOf` 只在 !isSeeded 且非 0
+ * 时抛——只是不会命中 seeded 记录，与宿主 listing 行为一致）。
  */
-const coldCache = new Map<string, { value: SessionHealthProjection | null; at: number }>()
-const coldInFlight = new Map<string, Promise<void>>()
-const COLD_TTL_MS = 60_000
-const COLD_MAX_NEW = 4
-const COLD_LOAD_TIMEOUT_MS = 20_000
+interface ListRowRec {
+  header: {
+    id: string
+    createdAt?: number
+    origin?: string
+    cwd?: string
+    /** 检查点身份字段（`identityOf` 的 formatVersion 来源）。 */
+    version?: number
+    isSeeded?: boolean
+  }
+  live?: boolean
+  persisted?: boolean
+}
 
-/** 测试专用：清空模块级缓存（listSessions / cold load / blank truth），隔离用例间的 stub 状态。 */
+/**
+ * 本插件用到的 `sessionProjectionCache` 面——只有检查点读。
+ * 用结构类型而非 import 宿主包：host half 不为一件读操作增加运行时依赖
+ * （`SessionLogOffset` 是宿主内部校验，这里传 0 即可，见上方注释）。
+ */
+interface SessionProjectionCacheLike {
+  cachedSnapshot(
+    meta: ListRowRec['header'],
+    inheritedEventCount: number,
+    keys?: readonly string[],
+  ): { values?: Record<string, unknown> } | undefined
+}
+
+/** 测试专用：清空模块级缓存（listSessions / title / blank truth），隔离用例间的 stub 状态。 */
 export function __resetOverviewCachesForTests(): void {
   listCache = { rows: null, at: 0 }
   listInFlight.clear()
-  coldCache.clear()
-  coldInFlight.clear()
   titleCache.clear()
   blankTruth.clear()
   blankTruthFetching = false
@@ -282,7 +305,6 @@ export function __resetOverviewCachesForTests(): void {
  * listSessions 结果缓存（6s TTL——略大于面板 5s 轮询，保证轮询帧大多命中缓存）+ 在途去重。空/异常结果不覆盖已有缓存。
  * 见 buildOverview 内注释——listSessions 是本 RPC 时延的全部来源。
  */
-interface ListRowRec { header: { id: string; createdAt?: number; origin?: string; cwd?: string }; live?: boolean; persisted?: boolean }
 let listCache: { rows: ListRowRec[] | null; at: number } = { rows: null, at: 0 }
 const listInFlight = new Map<string, Promise<unknown>>()
 const LIST_TTL_MS = 6_000
@@ -304,34 +326,6 @@ function listResultUsable(r: unknown): boolean {
 }
 
 /**
- * Kick off one background cold load for `id`; on completion the parsed value
- * (or null) lands in {@link coldCache}. Never throws; never rejects.
- */
-function scheduleColdLoad(
-  id: string,
-  run: () => Promise<{ values?: Record<string, unknown> }>,
-): void {
-  if (coldInFlight.has(id)) return
-  const done = new Promise<void>(resolve => {
-    const t = setTimeout(() => resolve(), COLD_LOAD_TIMEOUT_MS)
-    try {
-      run()
-        .then(snap => {
-          const value = (snap?.values?.sessionHealth as SessionHealthProjection | undefined) ?? null
-          coldCache.set(id, { value: value !== undefined && value !== null ? value : null, at: Date.now() })
-        })
-        .catch(() => coldCache.set(id, { value: null, at: Date.now() }))
-        .finally(() => clearTimeout(t))
-    } catch {
-      clearTimeout(t)
-      coldCache.set(id, { value: null, at: Date.now() })
-    }
-  })
-  coldInFlight.set(id, done)
-  void done.finally(() => { coldInFlight.delete(id) })
-}
-
-/**
  * Build the overview rows: top-level (non-subagent), non-archived sessions.
  * Never throws on a single bad session — per-record failures degrade to
  * `health: null` / `title: null` so one broken record cannot blank the whole
@@ -339,9 +333,8 @@ function scheduleColdLoad(
  * assemblies keep working).
  *
  * First-frame budget is 200ms: the ONLY await on this path is
- * `listSessions`; every cold projection load runs in the background and its
- * row simply reads `health: null` this frame (the panel's 5s refresh picks
- * the backfilled value up).
+ * `listSessions`; the persisted-checkpoint health read is synchronous (zero
+ * I/O), so a cold row can already carry a value on the first frame.
  */
 export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<{ rows: OverviewRow[]; elapsed: { listMs: number; rowsMs: number; totalMs: number } }> {
   const t0 = Date.now()
@@ -443,12 +436,7 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
   const projections = ctx.get('sessionProjections') as
     | { snapshot(session: unknown): { values?: Record<string, unknown> } }
     | undefined
-  const cache = ctx.get('sessionProjectionCache') as
-    | {
-        cachedSnapshot(meta: { id: string }): { values?: Record<string, unknown> } | undefined
-        coldSnapshot?(id: string, signal?: AbortSignal): Promise<{ values?: Record<string, unknown> }>
-      }
-    | undefined
+  const cache = ctx.get('sessionProjectionCache') as SessionProjectionCacheLike | undefined
   const titleSvc = ctx.get('sessionTitle') as
     | { get(session: unknown): { title?: string } | undefined }
     | undefined
@@ -461,10 +449,8 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     | undefined
 
   const rows: OverviewRow[] = []
-  // Cold projection loads NEVER run on this path: misses are scheduled in the
-  // background (scheduleColdLoad) and the panel's 5s refresh picks the values
-  // up. First-frame budget is listSessions + synchronous reads only.
-  let coldLoadsNew = 0
+  // No background cold work: every read on this path is synchronous. The ONLY
+  // await is listSessions (see the cache above it).
   // Title cache misses: filled in the background, never awaited this frame.
   const titleMisses: string[] = []
   const now = Date.now()
@@ -495,8 +481,10 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     const ws = workspaceBySession.get(id)
     const createdAt = typeof rec.header.createdAt === 'number' ? rec.header.createdAt : 0
 
-    // Health value: live projection snapshot first, then the persisted cache
-    // (sync read), then an async cold load for a persisted session.
+    // Health value: live projection snapshot first, then the durable
+    // checkpoint (synchronous, zero I/O). A cold session therefore carries a
+    // value on the FIRST frame; `health: null` now means "no checkpoint row",
+    // not "a background load has not landed yet".
     let health: SessionHealthProjection | null = null
     const liveSession = rec.live === true ? sessionsStore?.get(id) : undefined
     if (liveSession !== undefined && projections !== undefined) {
@@ -504,31 +492,16 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
         const values = projections.snapshot(liveSession).values ?? {}
         const value = values.sessionHealth as SessionHealthProjection | undefined
         if (value !== undefined && value !== null) health = value
-      } catch { /* fall through to the cache */ }
+      } catch { /* fall through to the checkpoint read */ }
     }
     if (health === null && cache !== undefined) {
       try {
-        const snap = cache.cachedSnapshot(rec.header)
+        // 第二参 inheritedEventCount 必需（宿主 identityOf 会校验，缺了抛 TypeError）；
+        // keys 只取本插件要的那一格，省掉其它单元的 schema.parse。
+        const snap = cache.cachedSnapshot(rec.header, 0, ['sessionHealth'])
         const value = snap?.values?.sessionHealth as SessionHealthProjection | undefined
         if (value !== undefined && value !== null) health = value
-      } catch { /* fall through to cold load */ }
-    }
-    if (health === null && cache?.coldSnapshot !== undefined && rec.persisted === true) {
-      const cached = coldCache.get(id)
-      if (cached !== undefined && now - cached.at < COLD_TTL_MS) {
-        // TTL 内的已解析结果：直接进本帧（零等待、零 IO）。
-        if (cached.value !== null) health = cached.value
-      } else if (coldLoadsNew < COLD_MAX_NEW) {
-        // miss：后台发起（fire-and-forget），本帧保持 health=null，5s 轮询补齐。
-        coldLoadsNew++
-        const coldSnapshot = cache.coldSnapshot.bind(cache)
-        scheduleColdLoad(id, () => coldSnapshot(id))
-        // 顺手清理过期条目，防 Map 无界增长（会话数有限，O(n) 可忽略）。
-        if (coldCache.size > 64) {
-          for (const [k, v] of coldCache) if (now - v.at >= COLD_TTL_MS) coldCache.delete(k)
-        }
-      }
-      // 超过单帧新增上限：本轮该行保持 health=null，后续帧补齐。
+      } catch { /* 无检查点 / 身份不匹配 → 本帧 health=null，下一帧重试 */ }
     }
 
     // Title: live log-backed fold (in-memory, fast) first, then the cache.

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, refreshBlankTruth, warmBlankTruth, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
 import {
   check, config, signal, services, overviewCtx, overviewServices,
-  healthOf, fakeRes, fakeReq,
+  healthOf, fakeRes, fakeReq, cacheCalls, resetCacheCalls, assertLogOffset, SESSION_FORMAT_VERSION,
 } from './helpers.mjs'
 
 export async function run() {
@@ -148,35 +148,36 @@ export async function run() {
     assert.deepEqual(rows.map(r => r.id), ['in-ws']) // archived + subagent + cold-no-cwd out
   })
 
-  await check('overview: cold loads run OFF the request path — first frame null, next frame backfilled', async () => {
+  await check('overview: 检查点读同步零 IO —— 冷行首帧即有值，不等任何后台任务（0.12.2 语义）', async () => {
     __resetOverviewCachesForTests()
-    const slowCtx = {
+    let called = 0
+    const syncCtx = {
       get: name => ({
         ...overviewServices,
         sessionProjectionCache: {
-          cachedSnapshot: () => undefined,
-          coldSnapshot: async id => {
-            await new Promise(resolve => setTimeout(resolve, 20))
-            return { values: { sessionHealth: healthOf('blue') } }
+          // 宿主契约：**同步**返回快照（不是 Promise），零 I/O。旧写法把它当
+          // `coldSnapshot(id): Promise` 后台化，于是首帧永远是 null——本用例钉住新语义。
+          cachedSnapshot(meta, inheritedEventCount) {
+            called++
+            assertLogOffset(inheritedEventCount)
+            return { asOfSeq: 3, values: { sessionHealth: healthOf('blue') } }
           },
         },
         sessionQuery: {
-          listSessions: async () => [{ header: { id: 'cold-a', createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
+          listSessions: async () => [{ header: { id: 'cold-a', version: SESSION_FORMAT_VERSION, isSeeded: false, createdAt: 1, cwd: '/w' }, live: false, persisted: true }],
           readTitleSnapshots: async () => [],
         },
       })[name],
     }
-    // First frame: cold load is scheduled in the background — the row reads
-    // health:null THIS frame and buildOverview does NOT wait for the disk IO.
     const t0 = Date.now()
-    const { rows: rows } = await buildOverview(slowCtx, signal)
+    const { rows: rows } = await buildOverview(syncCtx, signal)
     assert.equal(rows.length, 1)
-    assert.equal(rows[0].health, null) // background load not awaited
-    assert.ok(Date.now() - t0 < 20, `first frame must not wait the ${Date.now() - t0}ms cold IO`)
-    // Next frame (after the 20ms background load lands): TTL cache serves it.
-    await new Promise(resolve => setTimeout(resolve, 60))
-    const { rows: rows2 } = await buildOverview(slowCtx, signal)
-    assert.equal(rows2[0].health?.severity, 'blue') // backfilled from cache
+    assert.equal(called, 1, '每行至多一次检查点读')
+    assert.equal(rows[0].health?.severity, 'blue') // 首帧即有值（不再有「下一帧补齐」窗口）
+    assert.ok(Date.now() - t0 < 50, `首帧不得等待 IO（实测 ${Date.now() - t0}ms）`)
+    // 第二帧同样直接可得（无 TTL 缓存需要预热）。
+    const { rows: rows2 } = await buildOverview(syncCtx, signal)
+    assert.equal(rows2[0].health?.severity, 'blue')
   })
 
   await check('overview: archived sessions are hidden everywhere', async () => {
@@ -467,13 +468,35 @@ export async function run() {
     assert.deepEqual(rows.map(r => r.id), ['live-nocwd'])
   })
 
+  await check('overview: 检查点读按宿主真实契约调用（第二参 inheritedEventCount 必传且合法）', async () => {
+    __resetOverviewCachesForTests()
+    resetCacheCalls()
+    const { rows } = await buildOverview(overviewCtx, signal)
+    // 契约回归（0.12.2）：宿主 cachedSnapshot(meta, inheritedEventCount, keys?) 内部
+    // 走 identityOf → SessionLogOffset(v)，漏传即 TypeError、异常被 catch 吞掉，
+    // 冷会话 health 会永远 null（自 0.11.1 起潜伏三个版本的 bug）。
+    // helpers 的桩按宿主真实形状复刻了这层校验：漏参/错参会在上面直接抛。
+    assert.ok(cacheCalls.length > 0, 'cachedSnapshot 必须被调用')
+    for (const call of cacheCalls) {
+      assert.equal(call.offset, 0, `cachedSnapshot 第二参必须是合法 offset（收到 ${String(call.offset)}）`)
+      assert.deepEqual(call.keys, ['sessionHealth'], 'cachedSnapshot 只取本插件要的那一格')
+    }
+    // 冷行必须**首帧**就带检查点数据——不再有「后台填、下一帧补齐」的等待窗口。
+    assert.equal(rows[1].id, 'cold-yellow')
+    assert.equal(rows[1].health.severity, 'yellow')
+    assert.equal(rows[1].health.ratio, 0.6)
+    // 没有检查点行的冷会话仍然是 null（不是崩溃、也不是假数据）。
+    assert.equal(rows[3].id, 'cold-unknown')
+    assert.equal(rows[3].health, null)
+  })
+
   await check('overview: one broken record degrades that row only', async () => {
     __resetOverviewCachesForTests()
     const brokenCtx = {
       get: name => ({
         ...overviewServices,
         sessionProjections: { snapshot: () => { throw new Error('boom') } },
-        sessionProjectionCache: { cachedSnapshot: () => { throw new Error('boom') }, coldSnapshot: async () => { throw new Error('boom') } },
+        sessionProjectionCache: { cachedSnapshot: () => { throw new Error('boom') } },
       })[name],
     }
     const { rows: rows } = await buildOverview(brokenCtx, signal)

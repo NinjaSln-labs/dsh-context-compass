@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.12.1**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.12.2**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 
@@ -27,7 +27,7 @@
 ### 质量
 
 - **十二轮审计**：51 fixed + 25 recorded（0 残留）
-- **167 项自动化测试全绿（0.12.1 时点复核）**：130 smoke + 7 mount + 24 client-mount（含 13 组 card-form 纯逻辑单测 + controlFor/saveBlocked/discardBlocked 渲染单一来源断言）+ 6 visual
+- **168 项自动化测试全绿（0.12.2 时点复核）**：131 smoke + 7 mount + 24 client-mount + 6 visual
 
 ### 稳定性基建（0.8.0 先行落地）
 
@@ -53,6 +53,13 @@
 - **测试** — smoke +3（validate 单调 / readConfig 双形态 / thunk 换层即时生效）+ mount +1（**真实接线集成**：settings 写入 → 工具判定 live 变化 + validate 拒绝非单调——该测试抓到 `as` 强转压掉 thunk 未调用的真 bug，见 pits 2026-08-26）
 - **测试规模** — smoke 107 + mount 6 + client-mount 7 + visual 6
 - **S4 canary 发布通道（顺带交付）** — `publish.yml`：prerelease 版本（`0.10.1-next.0` 形态，tag 同后缀）自动 `npm publish --tag next`（不动 latest）；新增 `canary-promote.yml`（workflow_dispatch 输入版本号 → 守卫 prerelease/存在性 → `npm dist-tag add … latest`，走同一 npm-publish 审批门）；流程文档入 `PUBLISHING.md`
+
+### 0.12.2 升级体检 + 冷路径契约修复
+
+- **dsh 升级体检（0.1.2-alpha.4 → 0.1.5-rc.1）全绿**——逐项实测：5 个客户端 slot 存在且 seat 全部 occupied/active、宿主 20 个 `ctx.get` 服务全在、`settings.installSection`/`settingsScope.bind+mutate`/`defineTool`/`CommandDefinition` 签名未变、live 投影数据真实、契约检查通过、visual 6/6（`panel-dark` 仍逐像素匹配旧版基线）；结论：**本次升级未破坏任何可观测行为**
+- **修冷会话检查点健康读（潜伏 3 个版本）**——`sessionProjectionCache` 两处调用按 0.1.1-rc.2 旧契约写：`cachedSnapshot(meta)` 漏必需第二参、`coldSnapshot(id)` 在 0.1.2 后已是 private/同步/三参且宿主零调用点。两处都抛 `TypeError` 且被 `try/catch` 吞掉 → 冷会话 health 永远 null。改为 `cachedSnapshot(header, 0, ['sessionHealth'])`（同步零 I/O，冷行首帧即有值），删净异步脚手架
+- **测试契约形状纠正**——stub 从「按插件假设」改为「按宿主真实形状」（第二参经 `assertLogOffset` 校验、同步返回、不提供 `coldSnapshot`）+ 新增调用实参回归断言。原 stub 正是把该 bug 掩盖三个版本的原因
+- **测试规模** — smoke 131 + mount 7 + client-mount 24 + visual 6
 
 ### 0.12.1 C2 卡片遗留项收口
 
@@ -117,6 +124,7 @@
 | **0.10.0** | **C1 host 配置点接入（已交付，随本版发）**——`installSettingsSection` getter 模式：thresholds/checks live 生效、resolveConfig 双源治愈、validate 三档单调、projection.enabled live 切换；pricing 源 4 字段 restart |
 | **0.12.0** | **C2 client 配置卡片（已交付）**——`settingsScope` 通道（官方 client inject + bind，多段 path mutate + revision fence），22 字段全量（阈值 8 / 检查项 7 / 投影 1 / 计费 6），草稿暂存 + parseField 范围校验 + thresholdError 单调性，可访问性 aria，官方壳样式对齐；13 组 card-form 纯逻辑单测 |
 | **0.12.1** | **C2 卡片遗留项收口（已交付）**——discard 逃生通道 / controlFor 渲染单一来源 / focus token 修复 / restartNote pill；client-mount +1 组断言 |
+| **0.12.2** | **升级体检 + 冷路径契约修复（已交付）**——dsh 0.1.5-rc.1 体检全绿；冷会话检查点健康读自 0.11.1 起静默失效（旧契约调用必抛 TypeError 被吞），改同步零 I/O 检查点读 + 删异步脚手架 + stub 契约形状纠正 |
 | **后续** | R3 / R4 / R5 / R6 · B1 / B2（等依赖就绪）|
 
 ## 维护规则
@@ -125,4 +133,4 @@
 - 被阻塞项保留在「被阻塞」并写明卡点；卡点解除后移回「待做」
 - 优先级/排期变化只改这里；`HANDOFF.md`（本地私有未追踪）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 引用本文件、不复制路线内容
 - **peer 基线策略**：`peerDependencies` 声明"最低要求的服务版本"，保持宽松、不随 harness 每次升级而升。**2026-08-29 已升 `^0.1.1-rc.2`**（此前 `^0.1.0-rc.6` 有 semver prerelease 门控陷阱：`>=0.1.0-rc.6 <0.2.0` 的带 prerelease 比较符元组是 0.1.0，仅 rc.8 这类元组 0.1.0 的版本匹配；0.1.1 系列元组 0.1.1 **不匹配**——旧 range 连当前部署 0.1.1-rc.2 都声明不上）。`^0.1.1-rc.2` 覆盖 0.1.1-rc.2 + 未来 0.1.2 正式版（`<0.2.0`）；**0.1.2-alpha.1 尚未发布 npm（暂不可声明 `^0.1.2-*`），待发布且接入其独有 API 时再局部升**（参考：C1 接入 `@deepseek-ai/dsh-settings` 的局部升先例）
-- **升级体检基线（S1 依据）**：每次 harness 升级，对照 live 契约校验插件硬注入（commands / tools / sessionProjections / webServer）+ 全部 `ctx.get` 可选读取 + client slot（sidebar.footer.action / shell.overlay / conversation.session.header.utilities；`conversation.chat.commandview` 已于 **0.1.2-alpha.1** 随会话流重构移除，/compass 卡片待换新机制）是否仍存在、形状是否兼容。rc.8 本次校验通过（见 commit `5a00d11`/`04a4600` 前后；原文 `9b98c07` 为早期改写前坐标）；**0.1.2-alpha.1 预判已记账（本地私有未追踪的 HANDOFF §3.1）：coldSnapshot 签名 breaking + commandview 移除，其余（事件词汇 / cachedSnapshot / settings Host mutate / 各 slot）验证无影响，待正式版实测**
+- **升级体检基线（S1 依据）**：每次 harness 升级，对照 live 契约校验插件硬注入（commands / tools / sessionProjections / webServer）+ 全部 `ctx.get` 可选读取 + client slot（sidebar.footer.action / shell.overlay / conversation.session.header.utilities / conversation.chat.commandview / settings.plugin.item）是否仍存在、形状是否兼容。rc.8 校验通过（见 commit `5a00d11`/`04a4600` 前后；原文 `9b98c07` 为早期改写前坐标）；**0.1.5-rc.1 体检完成（0.12.2，全绿）**——当年在 0.1.2-alpha.1 记的两条「预判影响」实测结论：① `coldSnapshot` 签名确实 breaking（**已修，见 0.12.2**）② `conversation.chat.commandview` slot **未移除**（实测存在且本插件 seat active，该预判有误）。**教训**：预判影响必须落成实测项，否则会像 coldSnapshot 一样潜伏三个版本（fail-soft 路径无症状）
