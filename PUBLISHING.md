@@ -148,6 +148,11 @@ dsh plugin add dsh-context-compass
                                                #   （environment npm-publish, required reviewers）
                                                #   → npm publish
   ```
+  **发版前本地校验 tag 指向**（0.7.11「tag 指旧提交」事故的守门动作）：`npm version` 打的是 **annotated tag**，
+  `git rev-parse <tag>` 返回的是 tag 对象 SHA 而非提交 SHA，会与 HEAD 假性不等——必须解引用：
+  ```sh
+  test "$(git rev-parse context-compass-v$(node -p "require('./package.json').version")^{})" = "$(git rev-parse HEAD)" && echo OK
+  ```
   **S4 canary 灰度通道**（先灰度再全量，2026-08-26 上线）：
   ```sh
   # ① 发 canary：版本号带 prerelease 后缀（publish.yml 自动发到 dist-tag next，不动 latest）
