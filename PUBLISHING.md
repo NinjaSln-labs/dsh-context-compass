@@ -158,7 +158,7 @@ dsh plugin add dsh-context-compass
   ```sh
   test "$(git rev-parse context-compass-v$(node -p "require('./package.json').version")^{})" = "$(git rev-parse HEAD)" && echo OK
   ```
-  **S4 canary 灰度通道**（先灰度再全量，2026-08-26 上线；**晋级方式 2026-09-10 裁定，见下方说明**）：
+  **S4 canary 灰度通道**（先灰度再全量，2026-08-26 上线；**晋级方式 2026-09-15 裁定，见下方说明**）：
   ```sh
   # ① 发 canary：版本号带 prerelease 后缀（publish.yml 自动发到 dist-tag next，不动 latest）
   npm version prerelease --preid=next -m "chore: canary v%s"
@@ -166,7 +166,7 @@ dsh plugin add dsh-context-compass
   # ② 本地实测：~/.dsh/profiles/web 手动改版本 → pnpm install → 重启 dsh → 跑验证清单
   # ③ 实测通过 → 发正式版（走上面「发布流程」正常发版）→ latest 自然前移到正式版
   ```
-  > **为什么不把 canary 直接晋级 latest（2026-09-10 裁定）**：npm 的 Trusted Publishing **只覆盖 `npm publish`**，
+  > **为什么不把 canary 直接晋级 latest（2026-09-15 裁定）**：npm 的 Trusted Publishing **只覆盖 `npm publish`**，
   > `npm dist-tag add` 不在支持范围——本机 npm 11.16.0 的 `lib/` 里**只有 `commands/publish.js` 引用 OIDC**，
   > `commands/dist-tag.js` 零引用；npm 官方文档（trusted-publishers）同此；社区请求见 npm/cli#8547 至今未实现。
   > 要跑 dist-tag 只能改用 granular token → 等于把 OIDC 迁移特意消除的长期凭据再引回来，故不采用。
