@@ -52,7 +52,7 @@
 - **C1 host 配置点** — `installSettingsSection(ctx, 'context-compass', Config, entry, hooks)`（设计定稿 `C1-SETTINGS-DESIGN.md`，实施按 T1→T3）：source-thunk 模式（官方 `dsh-agent-default-model` 同款），投影/工具/命令/overview RPC 四处经 `readConfig` 每次使用读当前值——**thresholds×8 / checks×5 / cost 显示项 live 生效**；`projection.enabled` 经 onChange 重判定（dispose/重注册）live 切换；`validate` 三档阈值单调性写时拒绝；pricing 源 4 字段 restart（schema 文案注明）。**双源治愈**：live 路径默认值全走 schemastery schema，`resolveConfig` 降级为测试/回退路径。peer 新增 `@deepseek-ai/dsh-settings: ^0.1.0-rc.6`（局部升策略）
 - **测试** — smoke +3（validate 单调 / readConfig 双形态 / thunk 换层即时生效）+ mount +1（**真实接线集成**：settings 写入 → 工具判定 live 变化 + validate 拒绝非单调——该测试抓到 `as` 强转压掉 thunk 未调用的真 bug，见 pits 2026-08-26）
 - **测试规模** — smoke 107 + mount 6 + client-mount 7 + visual 6
-- **S4 canary 发布通道（顺带交付）** — `publish.yml`：prerelease 版本（`0.10.1-next.0` 形态，tag 同后缀）自动 `npm publish --tag next`（不动 latest）；新增 `canary-promote.yml`（workflow_dispatch 输入版本号 → 守卫 prerelease/存在性 → `npm dist-tag add … latest`，走同一 npm-publish 审批门）；流程文档入 `PUBLISHING.md`
+- **S4 canary 发布通道（顺带交付；晋级方式 2026-09-10 修正）** — `publish.yml`：prerelease 版本（`0.10.1-next.0` 形态，tag 同后缀）自动 `npm publish --tag next`（不动 latest）。**修正**：本条原记「新增 `canary-promote.yml`（workflow_dispatch 输入版本号 → 守卫 prerelease/存在性 → `npm dist-tag add … latest`）」——该 workflow **本仓从未存在**（`git log --all --diff-filter=AD` 无记录；文档引用的 `f7b67c5` 属 monorepo 时代坐标），且 npm 的 Trusted Publishing **只覆盖 `npm publish`**、`dist-tag` 不在支持范围（本机 npm 11.16.0 仅 `commands/publish.js` 引用 OIDC；社区请求 npm/cli#8547 未实现），纯 OIDC 下做不到。**现行口径**：canary 用 `next` 验证通过后**发正式版**即完成晋级（latest 自然前移）；流程与理由见 `PUBLISHING.md`「S4 canary 灰度通道」
 
 ### 0.12.2 升级体检 + 冷路径契约修复
 

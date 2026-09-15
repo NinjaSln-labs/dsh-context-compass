@@ -140,31 +140,42 @@ dsh plugin add dsh-context-compass
 
 - **价格变更**：更新 `pricing/deepseek.json`（同步自 https://api-docs.deepseek.com/quick_start/pricing/，中英双页），同时更新 `updatedAt`
 - **客户端 bundle**：改 `src/client.tsx` 后必须 `npm run build`（tsc + esbuild `__ModuleLoader__` 工厂格式）；host 与 client 变更都需要重启 dsh + 刷新浏览器
-- **发布流程（CI 自动发布 + 人工审批门）**：
+- **发布流程（CI 自动发布 + OIDC）**：
   ```sh
   cd dsh-context-compass
   npm version patch --tag-version-prefix=context-compass-v -m "chore: release dsh-context-compass v%s"   # 自动提交 + 打 tag context-compass-vX.Y.Z（--tag-version-prefix 参数覆盖 npm 默认 'v'，对齐仓库 publish.yml Guard 要求）
   git push && git push --tags                  # CI（.github/workflows/publish.yml）接手：
                                                #   验证链（build/typecheck/smoke/mount/client-mount）
-                                               #   → tag 版本一致性守卫 → 等你在 GitHub 批准
-                                               #   （environment npm-publish, required reviewers）
-                                               #   → npm publish
+                                               #   → tag 版本一致性守卫 → npm publish（OIDC，无需审批等待）
+  # 核对（别只看版本号——0.7.11 曾发生「tag 指旧提交 → 发的是未审计旧代码」）：
+  npm view dsh-context-compass dist-tags                                   # latest 已前移
+  gh run list --limit 2                                                    # ci + publish 双绿
+  npm pack dsh-context-compass@X.Y.Z && grep -r <本次修复特征> package/lib # 产物真含改动
   ```
+  > **人工审批门默认未启用**：`publish.yml` 里 `environment: npm-publish` 是**注释行**——需先在 GitHub Environments 建同名环境 + required reviewers，再取消该行注释才生效（npm 端 trusted publisher 的 environment 字段须同名）。判断当前是否有门：看 publish run 是否出现等待审批的 pending 状态。
   **发版前本地校验 tag 指向**（0.7.11「tag 指旧提交」事故的守门动作）：`npm version` 打的是 **annotated tag**，
   `git rev-parse <tag>` 返回的是 tag 对象 SHA 而非提交 SHA，会与 HEAD 假性不等——必须解引用：
   ```sh
   test "$(git rev-parse context-compass-v$(node -p "require('./package.json').version")^{})" = "$(git rev-parse HEAD)" && echo OK
   ```
-  **S4 canary 灰度通道**（先灰度再全量，2026-08-26 上线）：
+  **S4 canary 灰度通道**（先灰度再全量，2026-08-26 上线；**晋级方式 2026-09-10 裁定，见下方说明**）：
   ```sh
   # ① 发 canary：版本号带 prerelease 后缀（publish.yml 自动发到 dist-tag next，不动 latest）
   npm version prerelease --preid=next -m "chore: canary v%s"
   git push && git push --tags                # CI 验证链同稳定版 → npm publish --tag next
   # ② 本地实测：~/.dsh/profiles/web 手动改版本 → pnpm install → 重启 dsh → 跑验证清单
-  # ③ 实测通过 → 晋级 latest：GitHub Actions → canary-promote → Run workflow →
-  #    输入完整版本号（如 0.10.1-next.0）——走同一 npm-publish 审批门；
-  #    workflow 会拒绝晋级非 prerelease 版本（stable 发布时已是 latest）
+  # ③ 实测通过 → 发正式版（走上面「发布流程」正常发版）→ latest 自然前移到正式版
   ```
-  应急手动发布（CI 不可用时）：`npm run build && npm run smoke && npm run mount && node scripts/client-mount.mjs && npm publish --access public`（本机 npm 登录态）
-- **一次性配置（CI 首次使用前）**：npm granular access token（仅授权 `dsh-context-compass` 包）→ GitHub secrets `NPM_TOKEN`；GitHub Environments 建 `npm-publish` 并设 Required reviewers（自己）——**token 绝不进聊天/对话**
-- **安全**：token 存 GitHub secrets；怀疑泄露时 secrets 一键轮换；workflow 权限最小化（contents: read，token 仅注入 publish 步骤）
+  > **为什么不把 canary 直接晋级 latest（2026-09-10 裁定）**：npm 的 Trusted Publishing **只覆盖 `npm publish`**，
+  > `npm dist-tag add` 不在支持范围——本机 npm 11.16.0 的 `lib/` 里**只有 `commands/publish.js` 引用 OIDC**，
+  > `commands/dist-tag.js` 零引用；npm 官方文档（trusted-publishers）同此；社区请求见 npm/cli#8547 至今未实现。
+  > 要跑 dist-tag 只能改用 granular token → 等于把 OIDC 迁移特意消除的长期凭据再引回来，故不采用。
+  > 补充理由：把 `X.Y.Z-next.0` 这类 prerelease 版号推成 `latest`，用户 `npm i` 拿到的版本字符串会带 `-next.0`，
+  > 语义与 provenance 都变浑——「canary 验证完 → 发正式版」既是常规做法，也绕开了该限制。
+  > `next` dist-tag 会保留指向最后一个 canary（无害）；需要清理时用**有 registry 写权限的登录态**跑
+  > `npm dist-tag rm dsh-context-compass next`（`dist-tag` 不走 OIDC，须先 `npm login` 或用授权 token）。
+  > 历史注：本仓 `.github/workflows/canary-promote.yml` **从未存在**（`git log --all --diff-filter=AD` 无记录），
+  > 旧文档引用的提交坐标 `f7b67c5` 属 monorepo 时代、在本仓不是有效对象——本条即该文档缺陷的收口。
+  应急手动发布（CI 不可用时）：`npm run build && npm run smoke && npm run mount && node scripts/client-mount.mjs && npm publish --access public` —— **需先 `npm login` 或有授权 token**（`npm publish` 的手动路径不走 OIDC），且此路径**无 provenance**
+- **一次性配置（CI 首次使用前）**：npmjs.com 包设置里配 **Trusted Publisher**（org/repo + workflow `publish.yml`）——**无需 `NPM_TOKEN`**，OIDC 由 `id-token: write` 提供。可选人工审批门见上方「发布流程」注（当前未启用）
+- **安全**：**无长期 token 需要保管或轮换**（OIDC）；workflow 权限最小化（`contents: read` + `id-token: write`，仅发布步骤使用）；`actions/*` 按 SHA 固定防供应链
