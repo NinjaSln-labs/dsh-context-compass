@@ -151,3 +151,10 @@ npm run visual:update  # 有意变更视觉后重写基线（visual/baselines/�
 ## License
 
 MIT
+
+---
+
+## 待办 · 交接迁移（完成后删除本节）
+
+按 `project-handoff` v1.1 规范压缩本仓 `HANDOFF.md` 至 ≤1K tokens：固定 5 节；删 §6；§2 不留 commit 列表；§1 不留历次历史；超出的内容迁 `HANDOFF-ARCHIVE/{cycles,done,pits}.md`。
+自检：`~/.agents/skills/project-handoff/scripts/handoff-lint.sh check HANDOFF.md`（Windows 用同目录 `.ps1`）——跑到全过；随后**删除本节**。

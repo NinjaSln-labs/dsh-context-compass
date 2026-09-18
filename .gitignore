@@ -24,3 +24,6 @@ docs/superpowers/
 
 # 仓库标准化审计输出（本机生成物：report.json 含本机绝对路径，按部署纪律第 5 条不入库）
 audit-report/
+
+# 交接环境指纹（本地私有，project-intake 指纹门控用）
+.handoff/
