@@ -27,3 +27,10 @@ audit-report/
 
 # 交接环境指纹（本地私有，project-intake 指纹门控用）
 .handoff/
+
+# Orca ADE（本机配置，不入仓）
+orca.yaml
+.worktreeinclude
+# --- private-docs (auto 2026-09-26) ---
+docs/OPTIMIZATION-RESEARCH.md
+docs/RESEARCH-COMPETITORS.md
