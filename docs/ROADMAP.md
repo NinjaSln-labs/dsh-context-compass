@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.13.0**（2026-10-01，dsh@0.2.0-rc.2 全面适配；BREAKING：peer 升 `^0.2.0-rc.2`）。本文件是路线图的**唯一权威来源（单源）**；`.handoff/`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.13.1**（2026-10-01，dsh@0.2.0-rc.2 全面适配；BREAKING：peer 升 `^0.2.0-rc.2`）。本文件是路线图的**唯一权威来源（单源）**；`.handoff/`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 

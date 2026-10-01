@@ -25,6 +25,8 @@
 
 - **0.11.5** — **罗盘一览 blank 口径对齐侧边栏真值（方案 A）**（2026-09-03，接手会话）：0.11.4 的 blank 用「标题 fold 无标题」代理判定，确认异步 + blankCache 60s TTL 过期 → 真空壳冷会话每帧闪现（实测侧边栏 9 行、罗盘首帧 10 行——0.11.4 的「7 会话对齐」实为稳态对齐，瞬态窗口未对齐）。本版改为消费宿主聚合层 `sessionController.list()` 每行自带的 `sessionListMetadata.blank` 投影真值（侧边栏渲染的就是这份列表）：挂载预热 `refreshBlankTruth` + 请求帧 SWR 刷新，冷 blank 行**首帧即裁剪**；真值缺席/抛错降级回标题代理路径。顺带修正 0.11.3 两处错误镜像：stray 会话保留显示（侧边栏「未分组」桶）、冷无 cwd 记录裁剪（宿主 list() 同款边界）。smoke +5（真值首帧裁剪 / live blank 不裁 / 真值失败降级 / stray 未分组 / 冷无 cwd）；本机测试按新 DoD 条目执行（file: 安装 + 重启 profile 实测首帧对齐）；DEVELOPMENT.md DoD 增补「本机测试」硬性条目（参照 dsh-subagent-router 纪律）。**注：0.11.5 因本版发现的返回形状 bug，方案 A 实际未生效——已被 0.11.6 接替**
 
+- **0.13.1** — **token 显示取整补丁**（2026-10-01，tag → `context-compass-v0.13.1`）：0.13.0 发布后用户截图指出浮层显示「约 595.490909091 token/轮（计费当量）」。`formatCompact` 对 ≥1000 走 K/M 取整，但 1000 以下直接 `String(n)`；而调用方给的常常是**算出来的** token 数（计费当量 = 未命中 + 命中×缓存折扣），是浮点。改为 `Math.round`——token 数语义本就是整数。一处修复覆盖全部显示路径（浮层四行 / 一览面板「输入」列 / 工具与命令结论文案）；唯一保留小数的 `toFixed` 是 R1 走势线 SVG 坐标，那里需要精度。回归覆盖进位边界（595.5→596、0.4→0、0.6→1）
+
 - **0.13.0** — **dsh@0.2.0-rc.2 全面适配**（2026-10-01，tag → `context-compass-v0.13.0`）：**BREAKING**：peer 全量升 `^0.2.0-rc.2`，不再兼容 dsh@<0.2.0-rc.2。
 
   - **四处断点**：`@deepseek-ai/dsh-client-runtime` 整包在 0.2.0 已移除，却仍留在 peer 里 → 宿主兼容性闸门**直接把本插件连同其余 5 个一起拒启**，路由从未注册（`import` 阶段即失败）；client 入口类型改回 cordis 原生 `Context`，`Context.slots` 声明方改由 `dsh-client-ui-renderer` 提供；ambient 同步。
