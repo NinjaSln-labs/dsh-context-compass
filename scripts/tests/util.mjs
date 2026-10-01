@@ -18,6 +18,18 @@ export async function run() {
     assert.equal(formatCompact(10_000_000), '10M')
   })
 
+  // 回归：计费当量 = 未命中 + 命中×缓存折扣，是浮点，1000 以下原先原样透出
+  // （用户截图里是「约 595.490909091 token/轮（计费当量）」）。token 数语义上是整数。
+  await check('util: formatCompact 对 1000 以下的浮点取整', () => {
+    assert.equal(formatCompact(595.490909091), '595')
+    assert.equal(formatCompact(0.4), '0')
+    assert.equal(formatCompact(0.6), '1')
+    assert.equal(formatCompact(595.5), '596')   // .5 进位
+    assert.equal(formatCompact(999.4), '999')
+    assert.equal(formatCompact(12), '12')
+    assert.equal(formatCompact(0), '0')
+  })
+
   await check('util: money formatting boundaries', () => {
     assert.equal(formatUsd(0.02), '$0.02')
     assert.equal(formatUsd(45), '$45.00')

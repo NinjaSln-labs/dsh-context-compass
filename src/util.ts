@@ -19,7 +19,10 @@ export function formatCompact(n: number): string {
     if (k >= 1000) return Math.round(k / 100) / 10 + 'M'
     return k + 'K'
   }
-  return String(n)
+  // 1000 以下也要取整：调用方给的常常是**算出来的** token 数（计费当量 =
+  // 未命中 + 命中×折扣），是浮点。原先直接 String(n) 会把
+  // 595.490909091 原样打给用户。token 数的语义本就是整数。
+  return String(Math.round(n))
 }
 
 /** Hit rate display: integer percent, Math.round — matches the core input-bar stats line. */
