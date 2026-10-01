@@ -15,6 +15,7 @@ npm run visual                   # Playwright 视觉回归（需运行中 harnes
 
 ## 提交规范
 
+- 本文件的纪律条款对人工协作者同样适用；`AGENTS.md` 是同一套纪律的 agent 入口版。
 - 提交信息用中文写清楚「改了什么 + 为什么」（仓库 AGENTS.md / DEVELOPMENT.md 有完整纪律）。
 - 涉及 `src/`、`scripts/` 改动会触发 pre-commit 部署纪律自检（`git config core.hooksPath .githooks` 启用）；确属未部署的中间态用 `--no-verify` 并在说明中注明。
 - **本机私有信息不入库**：本机绝对路径、个人邮箱、token、部署实况快照一律不写入入库文件。

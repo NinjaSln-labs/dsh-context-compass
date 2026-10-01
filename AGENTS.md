@@ -1,49 +1,46 @@
 # AGENTS（AI 协作与工程纪律）
 
-> 本文件由模板**单源拼装**（`common/AGENTS-core.md` + 分类 append）——重复段不要在仓库里手改；
-> 改规则先改模板源，再重新生成。人工协作者同样适用本文件全部条款。
+通用纪律段落改 `repo-audit` 仓的 `templates/common/AGENTS-core.md` 与 `templates/categories/dsh-plugin/AGENTS-append.md`；文末「交接纪律」节是本仓自主条款，直接改本文件，不进共享模板——共享模板不能预设各仓安装了同一套技能，判据见 `.handoff/decisions/d000001`。
 
 ## 项目概览
 
-Session health for DeepSeek Harness: real token-meter data, configurable continue-vs-new decision model. Reactive header badge (compaction-aware), /compass command, context_compass tool.。仓库根即工程根；分支、提交、验证、发版规范见下与 CONTRIBUTING.md。
+仓库根即插件目录（独立单库）。功能与使用介绍见 `README.md`；分支、提交、验证、发版规范见下与 `CONTRIBUTING.md`。
 
 ## 提交规范
 
-- **Conventional Commits 前缀 + 中文描述**：`feat(scope):` / `fix(scope):` / `refactor:` / `docs:` / `test:` / `chore:`；scope 用模块名；发布提交固定 `chore: release v<版本> — <一句话主旨>`。
-- **提交前必须跑本仓验证链单源**（`npm run test`，CI 与本地同源）并全绿。FAIL 修根因，不绕过；确需 `--no-verify` 必须在提交说明注明原因。
+- Conventional Commits 前缀 + 中文描述：`feat(scope):` / `fix(scope):` / `refactor:` / `docs:` / `test:` / `chore:`；scope 用模块名；发布提交固定 `chore: release v<版本> — <一句话主旨>`。
+- 提交前跑 `npm run test`（build→typecheck→smoke→mount→client-mount，CI 与本地同源）并全绿。
 
 ## AI 协作守则（agent 贡献者必读）
 
-1. **不猜 API/契约**：写代码前用宿主/依赖的检查工具查精确签名；测试 stub 必须按真实契约形状写（实践库教训：失真的 stub 会掩盖契约 bug）。
-2. **完成的定义 = 验证链全绿 + 实机/测试验收**，不是"代码写完"；声称完成前附验证输出。
-3. **机密红线**：本机绝对路径、个人邮箱、token/密钥、会过时的部署实况描述一律不入库；提交前 `git grep` 自查（模式见本仓 .gitignore 注释区）。
-4. **不静默绕过门禁**：pre-commit/CI FAIL 先修根因；中间态确需跳过必须留痕注明。
-5. **改动最小化**：不顺手重构、不改无关文件；构建产物与锁文件按仓库既定规则处理（产物不入库、锁文件必须入库）。
-6. **文档同步**：行为/接口变化同步 README、DEVELOPMENT 速查表（或等价文档）、CHANGELOG（如有）。
-7. **冲突处理**：本文件与生成它的模板源冲突时以模板源为准并回写；用户显式指示优先于本文件，但需在 PR/提交说明中标注冲突点。
+1. 不猜 API/契约：写代码前用宿主或依赖的检查工具查精确签名；测试 stub 按真实契约形状写（失真 stub 会掩盖契约 bug，曾两次因此让契约 bug 潜伏三个版本）。
+2. 完成的定义 = 验证链全绿 + 实机/测试验收，不是「代码写完」；声称完成前附验证输出。
+3. 机密红线：本机绝对路径（`/home/<user>`、`/mnt/<盘>`、`/Users/<user>`）、个人邮箱、token/密钥、会过时的部署实况描述（"当前 profile 装的是 X 版本"一类）不入库；本机特有配置文件（如 `.githooks/commit-msg`）只留本地并 ignore。末尾目录名（无完整路径）不构成泄露。提交前 `git grep -nE '/home/[a-z]|/mnt/[a-z]|/Users/[a-z]'` 自查。
+4. 不静默绕过门禁：pre-commit/CI FAIL 先修根因；确需跳过必须留痕注明。
+5. 改动最小化：不顺手重构、不改无关文件；`lib/`、`visual/results/`、`audit-report/` 不入库，`package-lock.json` 入库。
+6. 文档同步：行为或接口变化同步 `README.md`、`README.en.md`、`DEVELOPMENT.md` 速查表。
+7. 冲突处理：通用规则与 `templates/common/AGENTS-core.md` 冲突时以模板源为准并回写；本仓自主条款以本文件为准。用户显式指示优先，冲突点在 PR 或提交说明标注。
 
 ## 安全考虑
 
-- 漏洞**不要**公开披露：走 SECURITY.md 指定的私密漏洞报告渠道。
-- 依赖与 CI action 升级走仓库既定自动化（如有）；引入新依赖需在 PR 说明中给出理由。
+- 漏洞不公开披露：走 `SECURITY.md` 的私密报告渠道。
+- 依赖与 CI action 升级走 `.github/workflows/` 既有自动化；新增依赖在 PR 说明给出理由。
 
-## 部署纪律（本分类硬性，五条）
+## 部署纪律
 
 1. 改了本插件源码（`src/`、`lib/`）未发版 → profile 必须以 `file:` 指向本目录安装，禁止留在 registry 安装（同版本号不同内容，版本校验失效）。
 2. 安装一律走 `dsh plugin --profile web install`，禁裸 `npm install`。
 3. 每次 install / build 后必跑：`npm run check:deploy`（本单库即一个插件，无需 --pkg；FAIL 必须修复）。
 4. `file:` 场景禁止手动软链。
-5. **本机私有信息不入库**：本机绝对路径（如 `/home/<user>`、`/mnt/<盘>`、`/Users/<user>`）、个人邮箱、token/密钥、本地部署实况快照（"当前 profile 装的是 X 版本"类会过时的描述）一律不写入入库文件；属本机特有的配置文件（如 `.githooks/commit-msg`）只留本地并 ignore。末尾目录名（无完整路径）等不构成泄露。
+5. 改完插件重启 dsh 才生效。host 源码改动后跑完整 `npm run build`，只跑 tsc 产出的 `lib/client.js` 是坏的。
 
-> 单库说明：本仓库 2026-09 从 dsh-plugins monorepo 迁出，仓库根即插件目录。monorepo 时代的根级 `pnpm-workspace.yaml` + `overrides`（多包防双实例护栏）**本单库不需要**（单一包非 workspace）；peer 版本兼容由宿主 dsh 决定，peerDependencies 如实声明即可。git 钩子在 `.githooks/`（启用：`git config core.hooksPath .githooks`）。全文与事故背景见仓库根 `DEVELOPMENT.md`「部署纪律：profile 安装」。
+本仓不是 pnpm workspace：monorepo 时代的 `pnpm-workspace.yaml` + `overrides` 防双实例护栏不适用；peer 兼容由宿主 dsh 决定，`peerDependencies` 如实声明即可。git 钩子在 `.githooks/`，启用 `git config core.hooksPath .githooks`。事故背景见 `DEVELOPMENT.md`「部署纪律：profile 安装」。
 
 ## 交接纪律
 
-**未决项只写 `.handoff/`**（project-handoff 技能管理的交接存储，本机私有、不入库）。本仓其它位置的待办文本一律是**候选**，不是未决项真源——`docs/ROADMAP.md` 的 R/B 编号项是跨仓路线与被阻塞项的权威登记，`HANDOFF-ARCHIVE/backlog.md` 的 `#N` 是本仓动作清单，两者都作为 `scope` 登记的活体源参与对账，但**交接真源只有 `.handoff/`**。
+未决项真源是 `.handoff/`（本机私有、不入库）。路线与被阻塞项登记在 `docs/ROADMAP.md`（R3–R6 / B1–B2），它作为 `scope` 登记的活体源参与对账；交接真源仍只有 `.handoff/`。
 
-- 记录未决：只经 `python3 <project-handoff 技能>/scripts/handoff.py add action --…`，不手改 `.handoff/` 下任何文件。
+- 记未决：`python3 <project-handoff>/scripts/handoff.py add action --…`，不手改 `.handoff/` 下的文件。
 - 改插件后更新交接：`set status` / `set summary` / `set exit`（单文件槽整体覆写，写前先读回全量）。
-- 交接前门禁：`handoff check` 通过 + `handoff confirm` 判卷 PASS。
-- 槽外信息（放不进 9 槽的）走 `unconfirmed`，**不即兴开槽、不假装覆盖**。
-
-> **本节为何手写在此、不进共享模板**：每个仓库独立，共享模板（`repo-audit` 仓的 `templates/`）**不能预设用户安装了同一套技能**——把依赖某个技能的约定塞进通用模板，等于对所有下游仓预设了它们没选的东西。本节是本仓自主条款，**不进模板、不外推**；其它仓要用，各自仓内独立声明。
+- 交接前门禁：`handoff check` 通过且 `handoff confirm` 判卷 PASS。
+- 放不进九槽的信息写 `unconfirmed`。
