@@ -69,19 +69,41 @@ export async function openSession(page) {
   await gotoApp(page)
   if (await page.locator('.sh-badge').count() > 0) return
 
-  const id = await resolveSessionId(page)
-  await page.evaluate((sessionId) => {
-    localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId }))
-  }, id)
-  await page.reload({ waitUntil: 'domcontentloaded' })
-  await expect(page.locator('.sh-badge')).toBeVisible({ timeout: 20_000 })
+  // 依次尝试：环境变量给的 id → 现建一个会话。给定 id 会被**校验**而不是盲信：
+  // 会话可能被归档、过期，或属于另一个 profile，宿主就物化不出它，徽章永远不渲染
+  // （实测踩过：几小时前 headless CLI 建的会话，隔一轮宿主重启后就不再可用）。
+  // 盲信会让整个 badge 套件挂在一个早已失效的字符串上，且报错只说「徽章不可见」，
+  // 看不出真因。
+  const ids = []
+  if (process.env.DSH_VISUAL_SESSION_ID !== undefined && process.env.DSH_VISUAL_SESSION_ID !== '') {
+    ids.push(process.env.DSH_VISUAL_SESSION_ID)
+  }
+  for (let attempt = 0; attempt < 2; attempt++) ids.push(await createSessionId())
+
+  for (const id of ids) {
+    await page.evaluate((sessionId) => {
+      localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId }))
+    }, id)
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
+    // 会话物化是异步的（宿主要重新装配会话视图才挂上 header 席位），不能 reload
+    // 完就立刻断言——实测同一段代码 standalone 等 7s 成功、套件里立即断言就失败。
+    if (await waitForBadge(page)) return
+  }
+  throw new Error(`无法打开可用会话：试过 ${ids.length} 个 id，宿主都没能物化出徽章`)
 }
 
-/** 解析要打开的会话 id：环境变量优先，否则用 headless profile 现建一个。 */
-async function resolveSessionId(page) {
-  if (process.env.DSH_VISUAL_SESSION_ID !== undefined && process.env.DSH_VISUAL_SESSION_ID !== '') {
-    return process.env.DSH_VISUAL_SESSION_ID
+/** 等 header 徽章挂上来（会话物化是异步的）。 */
+async function waitForBadge(page, timeout = 20_000) {
+  const deadline = Date.now() + timeout
+  while (Date.now() < deadline) {
+    if (await page.locator('.sh-badge').count() > 0) return true
+    await page.waitForTimeout(400)
   }
+  return false
+}
+
+/** 现建一个会话（`dsh --profile headless` 既能接管已有会话，也能新建）。 */
+async function createSessionId() {
   const { execFileSync } = await import('node:child_process')
   const out = execFileSync('dsh', ['--profile', 'headless', '--json', '只回复两个字：收到'], {
     encoding: 'utf-8', timeout: 300_000, maxBuffer: 8 * 1024 * 1024,
