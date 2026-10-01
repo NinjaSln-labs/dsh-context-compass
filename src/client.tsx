@@ -70,8 +70,14 @@ export const name = 'dsh-context-compass'
  * convention (ui-goal: ['slots','sessions','remote','remote.goals',...]).
  * There is deliberately NO `remote.sessionHealth`: plugin Remotes never mount
  * client-side, and an injected one would leave the entry pending forever.
+ *
+ * `settingsScope` (C2 配置卡) is likewise **not** required: the host removed that
+ * service in 0.2.0-rc.2 (settings 改由 `SettingsForms` 从 Config schema 自动派生，
+ * client 侧不再有 per-namespace scope）。把它留在 required inject 里 = 整个 entry
+ * 永远 pending → **整个 client bundle 静默不挂载**（徽章/面板/命令卡全没，零报错）。
+ * C2 改为下面 `bindCompassCard()` 里的可选探测。
  */
-export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale', 'settingsScope']
+export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale']
 
 /** Client entry: register the badge + the multi-session overview panel seats. */
 export function apply(ctx: ClientContext): void {
@@ -91,15 +97,15 @@ export function apply(ctx: ClientContext): void {
   // a re-apply starts fresh, an unload takes the registrations with it).
   const overviewStore = new OverviewStore()
 
-  // C2：罗盘配置卡 controller。settingsScope 是 cordis 服务注入（inject 已含）；
-  // bind 返回的 scope 已挂 dispose 到本 fiber（官方 bind 内置 ctx.effect），无需手动清理。
+  // C2：罗盘配置卡 controller。`settingsScope` 是**可选**服务——
+  // 宿主 0.2.0-rc.2 起已移除该服务（settings 改为 SettingsForms 从 schema 派生），
+  // 探测不到时只跳过配置卡，徽章/一览面板/命令卡照常注册。
   // cast：宿主 SettingsScope 与自建 CompassScopeLike 因 mutate 参数逆变不直接兼容，
   // 用双 cast（as unknown as）保证通过（形状已由契约复核确认，语义明确）。
-  const compassSettingsScope = (ctx as unknown as { settingsScope: { bind(spec: { namespace: string }): unknown } }).settingsScope
-  const compassCard = createSettingsCard(
-    compassSettingsScope.bind({ namespace: 'context-compass' }) as unknown as Parameters<typeof createSettingsCard>[0],
-  )
-  ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
+  const compassCard = bindCompassCard(ctx)
+  if (compassCard !== undefined) {
+    ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
+  }
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
     { name: 'conversation.session.header.utilities', id: 'session-health-dot', order: 10 } as never,
@@ -137,10 +143,42 @@ export function apply(ctx: ClientContext): void {
       />
     ),
   ) as never)
-  ctx.slots.inject('settings.plugin.item', function* () {
-    yield ctx.slots.register(
-      { name: 'settings.plugin.item', key: 'context-compass' } as never,
-      () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
-    ) as never
-  })
+  // C2 配置卡只在 settingsScope 可用时注册（宿主 0.2.0-rc.2 起无此服务）。
+  if (compassCard !== undefined) {
+    ctx.slots.inject('settings.plugin.item', function* () {
+      yield ctx.slots.register(
+        { name: 'settings.plugin.item', key: 'context-compass' } as never,
+        () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
+      ) as never
+    })
+  }
+}
+
+/**
+ * C2 配置卡的 controller。`settingsScope` 缺失（宿主 0.2.0-rc.2 起移除该服务）
+ * 时返回 undefined 并告警——**不能抛**：apply 抛错会让本 entry 整个挂载失败，
+ * 连带徽章、一览面板、命令卡一起消失。
+ *
+ * 必须用 `ctx.get(name)` 探，**不能读 `ctx.settingsScope` 属性**：cordis 的拓扑
+ * 代理会对未在 inject 列表里的属性读直接抛 `cannot get property "settingsScope"
+ * without inject`（0.2.0-rc.2 首次实测撞到）。`ctx.get` 是唯一无 inject 要求的读法，
+ * 未提供时返回 undefined。
+ */
+function bindCompassCard(ctx: ClientContext): ReturnType<typeof createSettingsCard> | undefined {
+  const scope = (ctx as unknown as { get(name: string): { bind(spec: { namespace: string }): unknown } | undefined })
+    .get('settingsScope')
+  if (scope === undefined || typeof scope.bind !== 'function') {
+    console.warn(
+      '[dsh-context-compass] settingsScope 服务不可用（宿主 0.2.0-rc.2 起已移除）——'
+      + '跳过设置页配置卡；徽章/命令卡/一览面板不受影响。配置请改配置文件。',
+    )
+    return undefined
+  }
+  try {
+    // bind 返回的 scope 已挂 dispose 到调用方 fiber（官方 bind 内置 ctx.effect）
+    return createSettingsCard(scope.bind({ namespace: 'context-compass' }) as unknown as Parameters<typeof createSettingsCard>[0])
+  } catch (err) {
+    console.warn(`[dsh-context-compass] 配置卡绑定失败，跳过设置页卡片：${err instanceof Error ? err.message : String(err)}`)
+    return undefined
+  }
 }

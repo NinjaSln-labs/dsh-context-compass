@@ -170,17 +170,11 @@ export function applyHealthEvent(state: SessionHealthState, event: SessionEvent)
         post,
       )
     }
-    case 'assistant/chunk': {
-      if (event.data.chunk.type !== 'usage') return state
-      const u = event.data.chunk.usage
-      if (typeof u.inputTokens !== 'number') return state
-      const post = pressureOf(u)
-      const sample = pushSample(state, event.data.turn, event.data.step, post)
-      return foldCompression(
-        { ...state, pressureTokens: post, lastUsage: bucketsOf(u), pressureHistory: sample.history, lastSample: sample.last },
-        post,
-      )
-    }
+    // 0.2.0-rc.2 起 `assistant/chunk` 已从 dsh-session 事件union 中移除：模型输出与
+    // 它的 token 计费合并进 `assistant/message.usage`（宿主注释原文「there is no
+    // separate usage record」）。旧 case 监听的是旧词汇表的流式 usage 分片，
+    // 在新宿主下永不命中——留着既过不了类型检查，也是一处会误导后人的死代码。
+    // `assistant/attempt`（未产出可见消息的失败/重试尝试）**不带 usage**，不参与折叠。
     case 'request/context': {
       if (event.data.contextWindow === undefined) return state
       return { ...state, contextWindow: event.data.contextWindow }
@@ -209,10 +203,12 @@ function countOrZero(v: unknown): number {
 
 /**
  * R1 sparkline: record one pressure sample, capped to the most recent CAP
- * entries. Dedup by (turn, step), aligned with token-meter's口径: a streamed
- * step emits `assistant/chunk(usage)` early and `assistant/message` with the
- * same step's final usage — the second arrival REPLACES the first instead of
- * double-writing (AUDIT R1-1).
+ * entries. Dedup by (turn, step)（AUDIT R1-1）——同一 step 的多次 usage 报告只留最后一次。
+ *
+ * 0.2.0-rc.2 词汇表变化：旧宿主一个 step 会先发 `assistant/chunk(usage)` 再发
+ * `assistant/message`（同 step 两次到达，故需要 REPLACE 去重）；新宿主把 usage 直接
+ * 合并进 `assistant/message.usage`（「there is no separate usage record」），一 step
+ * 一次。去重键保留——它是幂等护栏，同 step 重放不会重复写入。
  */
 function pushSample(
   state: SessionHealthState,

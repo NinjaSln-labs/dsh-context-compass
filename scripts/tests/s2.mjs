@@ -58,7 +58,7 @@ export async function run() {
       { type: 'user/message', data: {} },
       { type: 'assistant/message', data: {} },
       { type: 'assistant/message', data: { usage: { inputTokens: 100_000, cacheReadTokens: 0, cacheWriteTokens: 0 } } },
-      { type: 'assistant/chunk', data: { chunk: { type: 'usage', usage: { inputTokens: 90_000, cacheReadTokens: 5_000 } } } },
+      { type: 'assistant/message', data: { usage: { inputTokens: 90_000, cacheReadTokens: 5_000 } } },
       { type: 'request/context', data: { contextWindow: 1_000_000 } },
       { type: 'compaction/end' },
       { type: 'unknown/future-event', data: {} },

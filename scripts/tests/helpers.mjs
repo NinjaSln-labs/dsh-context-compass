@@ -45,7 +45,9 @@ export const events = [
   { type: 'user/message', data: {} },
   { type: 'assistant/message', data: { turn: 2, step: 1 } },
   { type: 'compaction/end', data: {} },
-  { type: 'assistant/chunk', data: { turn: 2, step: 1, chunk: { type: 'usage', usage: { inputTokens: 32_000, cacheReadTokens: 0 } } } },
+  // 0.2.0-rc.2 词汇表：usage 随 assistant/message 一起发（宿主注释原文
+  // 「there is no separate usage record」），旧的 assistant/chunk 已从事件 union 移除。
+  { type: 'assistant/message', data: { turn: 2, step: 1, usage: { inputTokens: 32_000, cacheReadTokens: 0 } } },
 ]
 for (const e of events) state = applyHealthEvent(state, e)
 

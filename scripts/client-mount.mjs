@@ -245,6 +245,44 @@ assert.equal(styleTags[0].dataset.plugin, 'dsh-context-compass', 'style tag must
 assert.ok(styleTags[0].textContent.includes('.sh-badge'), 'style tag must carry the badge CSS')
 console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compass">')
 
+// 5b) 宿主 0.2.0-rc.2 起没有 settingsScope 服务 → 整个 client bundle 必须照常挂载。
+// 这是本仓最险的一条：settingsScope 原在 required `inject` 里，cordis 遇到永不
+// 出现的 required 服务会让 entry 永远 pending —— apply 根本不跑，徽章/面板/命令卡
+// 一起消失且零报错。回归钉住「缺 settingsScope 只掉配置卡，不掉其它四席」。
+{
+  const bare = new Context()
+  const bareSeats = []
+  bare.provide('slots', {
+    inject: (name, fn) => { bareSeats.push({ name, fn }) },
+    register: (...args) => args,
+  })
+  bare.provide('sessions', { binding: () => undefined, open: () => {}, list: { getSnapshot: () => ({ byId: {} }) } })
+  bare.provide('remote', { commands: { execute: async () => ({ ok: true }) } })
+  bare.provide('remote.commands', { execute: async () => ({ ok: true }) })
+  bare.provide('locale', { snapshot: { active: 'zh' } })
+  // 刻意不 provide settingsScope —— 复刻宿主 0.2.0-rc.2 的实况。
+  let applied = false
+  try {
+    await bare.plugin(plugin).await()
+    applied = true
+  } catch (error) {
+    console.error('client mount FAILED without settingsScope — apply threw:')
+    throw error
+  }
+  assert.ok(applied, '缺 settingsScope 时 apply 仍须完成（不得因 bind TypeError 抛错）')
+  const bareByName = Object.fromEntries(bareSeats.map(s => [s.name, s]))
+  for (const seat of [
+    'conversation.session.header.utilities',
+    'sidebar.footer.action',
+    'shell.overlay',
+    'conversation.chat.commandview',
+  ]) {
+    assert.ok(bareByName[seat], `缺 settingsScope 时 ${seat} 仍须注册`)
+  }
+  assert.equal(bareByName['settings.plugin.item'], undefined, '缺 settingsScope 时只跳过 C2 配置卡')
+  console.log('  ok  no settingsScope (host 0.2.0-rc.2): four seats survive, C2 card skipped')
+}
+
 // 6) C2 card-form controller unit tests (fake scope drives the form).
 const { CompassCardForm } = await import('../lib/client/settings-card/card-form.js')
 const { FIELDS: CF_FIELDS } = await import('../lib/client/settings-card/fields.js')

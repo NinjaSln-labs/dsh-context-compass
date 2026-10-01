@@ -16,7 +16,7 @@ export async function run() {
   await check('projection: fold counts (turns/messages/compactions)', () => {
     assert.equal(state.turns, 2)
     assert.equal(state.userMessages, 2)
-    assert.equal(state.assistantMessages, 2)
+    assert.equal(state.assistantMessages, 3) // 0.2.0-rc.2：usage 随 assistant/message 发，故第三条 message 也计数
     assert.equal(state.compactions, 1)
     assert.equal(state.pressureTokens, 32_000) // last usage sample wins
     assert.equal(state.contextWindow, 100_000)
@@ -60,16 +60,15 @@ export async function run() {
     const base = { turns: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0, pressureTokens: 360_000 }
     // Streaming chunk usage often omits inputTokens — must NOT overwrite the
     // last good pressure with NaN or 0.
-    const chunk = applyHealthEvent(base, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'usage', usage: { outputTokens: 100 } } } })
-    assert.equal(chunk.pressureTokens, 360_000)
-    assert.equal(chunk.lastUsage, undefined)
-    assert.ok(!Number.isNaN(chunk.pressureTokens))
-    // Same for assistant/message with an incomplete usage report.
+    // 0.2.0-rc.2：只有 assistant/message 携带 usage（assistant/chunk 已移除），
+    // 「不完整 usage」只能由缺 inputTokens 的 message 报告来复现。
     const msg = applyHealthEvent(base, { type: 'assistant/message', data: { turn: 1, step: 1, usage: { outputTokens: 50 } } })
     assert.equal(msg.pressureTokens, 360_000)
+    assert.equal(msg.lastUsage, undefined)
     assert.equal(msg.assistantMessages, 1) // message still counts; usage skipped
+    assert.ok(!Number.isNaN(msg.pressureTokens))
     // Complete usage still updates.
-    const ok = applyHealthEvent(base, { type: 'assistant/chunk', data: { turn: 1, step: 1, chunk: { type: 'usage', usage: { inputTokens: 32_000, cacheReadTokens: 0 } } } })
+    const ok = applyHealthEvent(base, { type: 'assistant/message', data: { turn: 1, step: 1, usage: { inputTokens: 32_000, cacheReadTokens: 0 } } })
     assert.equal(ok.pressureTokens, 32_000)
     assert.deepEqual(ok.lastUsage, { inputTokens: 32_000, cacheReadTokens: 0, cacheWriteTokens: 0 })
   })

@@ -56,18 +56,29 @@ export default {
     // the entry when it goes away. All consumers read through source() at USE
     // time — threshold changes reach the badge on the next push frame.
     let source: () => ResolvedConfig = () => resolveConfig(config)
-    // C1: wire settings via inject (new API: sctx.settings.installSection —
-    // module-level installSettingsSection removed in dsh-settings@0.1.2-alpha.4).
-    // When no settings service exists, source stays as entry fallback.
+    // ⚠️ C1 已断：宿主 0.2.0-rc.2 重构了 dsh-settings，`installSection` 被移除，
+    // 服务面换成 `SettingsForms`（从 Config schema 自动派生表单 + describe/update/
+    // replace/mutate）。本仓的 setSource 活源重绑定 / validate / onChange 三个钩子
+    // 在新契约里没有对应物，**接不回来**——需要按新契约重新设计（见 .handoff/actions）。
+    //
+    // 现状（保命）：保留调用走运行时兜底，插件不崩、配置从入口 config 读，
+    // 只是设置页的配置卡静默失效。刻意用宽类型 cast 访问——直接写
+    // `sctx.settings.installSection` 过不了类型检查，而我们要的是**运行时**那条
+    // TypeError 兜底路径，不是编译期就断。接回 C1 时删掉这个 cast。
     ctx.inject(['settings'], (sctx) => {
       try {
-        sctx.settings.installSection(ctx, 'context-compass', Config, config, {
-          setSource: current => { source = () => resolveConfig(current()) },
+        (sctx.settings as unknown as {
+          installSection: (owner: unknown, ns: string, schema: unknown, entry: unknown, hooks: Record<string, unknown>) => void
+        }).installSection(ctx, 'context-compass', Config, config, {
+          setSource: (current: () => unknown) => { source = () => resolveConfig(current() as ConfigType) },
           onChange: () => syncProjectionUnit(),
-          validate: value => validateConfig(resolveConfig(value)),
+          validate: (value: unknown) => validateConfig(resolveConfig(value as ConfigType)),
         })
       } catch (err) {
-        console.warn(`[dsh-context-compass] settings section invalid — falling back to entry config: ${err instanceof Error ? err.message : String(err)}`)
+        // 预期路径（宿主 ≥0.2.0-rc.2）：installSection is not a function。
+        // 插件不崩但**设置页配置卡失效**（配置只能改配置文件）——这是已知待重接的
+        // C1 断点，见 .handoff/actions，别把它当偶发告警忽略。
+        console.warn(`[dsh-context-compass] settings section 接入失败（宿主 0.2.0-rc.2 起 installSection 已移除，C1 待重接），回落入口 config：${err instanceof Error ? err.message : String(err)}`)
       }
     })
     // Stable reader: setSource REASSIGNS `source`, so consumers must capture

@@ -10,7 +10,8 @@ import { sessionHealthProjectionDefinition, applyHealthEvent, healthView } from 
 import { check, config, assertWireSafe } from './helpers.mjs'
 
 const msg = (turn, step, usage) => ({ type: 'assistant/message', data: { turn, step, usage } })
-const chunk = (turn, step, usage) => ({ type: 'assistant/chunk', data: { turn, step, chunk: { type: 'usage', usage } } })
+// 0.2.0-rc.2：usage 随 assistant/message 一起发；旧的 assistant/chunk 已移除。
+const chunk = (turn, step, usage) => ({ type: 'assistant/message', data: { turn, step, usage } })
 
 export async function run() {
   await check('R1: pressureHistory 随 usage 报告追加（旧→新），缺 inputTokens 的报告不追加', () => {
