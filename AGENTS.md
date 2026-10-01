@@ -36,3 +36,14 @@ Session health for DeepSeek Harness: real token-meter data, configurable continu
 5. **本机私有信息不入库**：本机绝对路径（如 `/home/<user>`、`/mnt/<盘>`、`/Users/<user>`）、个人邮箱、token/密钥、本地部署实况快照（"当前 profile 装的是 X 版本"类会过时的描述）一律不写入入库文件；属本机特有的配置文件（如 `.githooks/commit-msg`）只留本地并 ignore。末尾目录名（无完整路径）等不构成泄露。
 
 > 单库说明：本仓库 2026-09 从 dsh-plugins monorepo 迁出，仓库根即插件目录。monorepo 时代的根级 `pnpm-workspace.yaml` + `overrides`（多包防双实例护栏）**本单库不需要**（单一包非 workspace）；peer 版本兼容由宿主 dsh 决定，peerDependencies 如实声明即可。git 钩子在 `.githooks/`（启用：`git config core.hooksPath .githooks`）。全文与事故背景见仓库根 `DEVELOPMENT.md`「部署纪律：profile 安装」。
+
+## 交接纪律
+
+**未决项只写 `.handoff/`**（project-handoff 技能管理的交接存储，本机私有、不入库）。本仓其它位置的待办文本一律是**候选**，不是未决项真源——`docs/ROADMAP.md` 的 R/B 编号项是跨仓路线与被阻塞项的权威登记，`HANDOFF-ARCHIVE/backlog.md` 的 `#N` 是本仓动作清单，两者都作为 `scope` 登记的活体源参与对账，但**交接真源只有 `.handoff/`**。
+
+- 记录未决：只经 `python3 <project-handoff 技能>/scripts/handoff.py add action --…`，不手改 `.handoff/` 下任何文件。
+- 改插件后更新交接：`set status` / `set summary` / `set exit`（单文件槽整体覆写，写前先读回全量）。
+- 交接前门禁：`handoff check` 通过 + `handoff confirm` 判卷 PASS。
+- 槽外信息（放不进 9 槽的）走 `unconfirmed`，**不即兴开槽、不假装覆盖**。
+
+> ⚠️ **模板源待回写**：本节为 2026-10-01 迁移时按用户指示**只在本仓手工添加**，未写回生成它的模板源（`repo-audit` 仓 `templates/categories/dsh-plugin/AGENTS-append.md`），以免波及全部 dsh 插件仓的 scaffold 合并面。**下次动 `repo-audit` 模板时须把本节并入分类 append 并重跑 `scaffold --update`**，否则本节会在模板更新时被覆盖。跟踪见 `.handoff/` actions。

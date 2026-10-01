@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.12.2**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`HANDOFF.md`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.12.2**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`.handoff/`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 
@@ -87,32 +87,19 @@
 ## 待做（按优先级）
 
 > 主线目标：**发布稳定、不影响体验**。顺序原则：稳定性基建 > 零风险功能 > 需兼容测试的功能 > 需先调研设计的大项。
+> 完成一项 → 从本节删除，交付状态回写「已交付」段并标注落地版本；**交接侧同步**（只经 `handoff add/close`，见下「维护规则」）。
+> 已无待做：稳定性基建 S0–S4 全部交付（见「已交付」0.10.0 段）；配置点接入 C1（0.10.0）/ C2（0.12.0）/ R1 sparkline（0.9.0）均已交付。
+> 未决 R3/R4 为 P2，R5/R6 为 P3。
 
-### 稳定性基建（保证发布稳定）
+- [ ] **R3 定价同步自动化（C4）· P2** — `pricing/deepseek.json` 手动同步 → CI 定时对比官方、变更开 PR（依赖：GitHub Actions 定时 job）
+- [ ] **R4 session-health 技能阈值回写（D1）· P2** — 插件阈值与技能默认参数已分叉，需对齐（依赖：技能侧配合）
+- [ ] **R5 轮次语义细化（A5）· P3** — 区分多工具调用的回合：「轮次 X / 步数 Y」（依赖：投影加 step 计数）
+- [ ] **R6 多币种 / 实时汇率 · P3** — 收益低、外部依赖脆，暂缓（依赖：外部汇率源）
 
-> **稳定性基建 S0–S4 全部交付**（S4 见「已交付」0.10.0 段），本节无待做项。
+## 被阻塞项
 
-### 配置点接入（C1/C2 均已交付）
-
-> `ctx.settings` 插件配置点：Host 注册 settings 命名空间 + Client 在 `settings.plugin.item` 槽注册卡片，设置 UI 直接调参。**C1 已交付（0.10.0）；C2 已交付（0.12.0）。**
-
-### 功能项
-
-> R1 已交付（0.9.0），见「已交付」。
-
-| # | 项 | 优先级 | 动机 / 价值 | 依赖 |
-|---|---|---|---|---|
-| R3 | **定价同步自动化（C4）** | P2 | `pricing/deepseek.json` 手动同步 → CI 定时对比官方、变更开 PR | GitHub Actions 定时 job |
-| R4 | **session-health 技能阈值回写（D1）** | P2 | 插件阈值与技能默认参数已分叉，需对齐 | 技能侧配合 |
-| R5 | **轮次语义细化（A5）** | P3 | 区分多工具调用的回合：「轮次 X / 步数 Y」 | 投影加 step 计数 |
-| R6 | **多币种 / 实时汇率** | P3 | 收益低、外部依赖脆，暂缓 | 外部汇率源 |
-
-## 被阻塞（需 harness 或跨仓库配合）
-
-| # | 项 | 卡点 |
-|---|---|---|
-| B1 | 会话列表每行健康点（见 `SESSION-LIST-DOT.md`） | harness 需声明 `session.row.trailing` slot；无源码做不了 |
-| B2 | 知识库自动写回（D2 强联动） | dsh-knowledge-sqlite 需开放公开、带门控的写入服务（跨仓库协作）|
+- [ ] **B1 会话列表每行健康点**（见 `SESSION-LIST-DOT.md`）— harness 需声明 `session.row.trailing` slot；无源码做不了
+- [ ] **B2 知识库自动写回（D2 强联动）** — dsh-knowledge-sqlite 需开放公开、带门控的写入服务（跨仓库协作）
 
 ## 排期建议
 
@@ -129,8 +116,9 @@
 
 ## 维护规则
 
-- 本文件是路线图的**唯一权威来源**；完成一项 → 从「待做」移到「已交付」并标注落地版本
-- 被阻塞项保留在「被阻塞」并写明卡点；卡点解除后移回「待做」
-- 优先级/排期变化只改这里；`HANDOFF.md`（本地私有未追踪）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 引用本文件、不复制路线内容
+- 本文件是路线图的**唯一权威来源**；`.handoff/`（交接存储，本地私有未追踪）只留指针，不复制本表
+- 完成一项 → 从「待做」删除，落地版本标注在「已交付」段；**交接侧同步办结**（`handoff close <id>`，只经 CLI，不手改 `.handoff/` 文件）
+- 被阻塞项保留在「被阻塞项」并写明卡点；卡点解除后移回「待做」
+- 优先级/排期变化只改这里；`.handoff/`（本地私有未追踪）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 引用本文件、不复制路线内容
 - **peer 基线策略**：`peerDependencies` 声明"最低要求的服务版本"，保持宽松、不随 harness 每次升级而升。**2026-08-29 已升 `^0.1.1-rc.2`**（此前 `^0.1.0-rc.6` 有 semver prerelease 门控陷阱：`>=0.1.0-rc.6 <0.2.0` 的带 prerelease 比较符元组是 0.1.0，仅 rc.8 这类元组 0.1.0 的版本匹配；0.1.1 系列元组 0.1.1 **不匹配**——旧 range 连当前部署 0.1.1-rc.2 都声明不上）。`^0.1.1-rc.2` 覆盖 0.1.1-rc.2 + 未来 0.1.2 正式版（`<0.2.0`）；**0.1.2-alpha.1 尚未发布 npm（暂不可声明 `^0.1.2-*`），待发布且接入其独有 API 时再局部升**（参考：C1 接入 `@deepseek-ai/dsh-settings` 的局部升先例）
 - **升级体检基线（S1 依据）**：每次 harness 升级，对照 live 契约校验插件硬注入（commands / tools / sessionProjections / webServer）+ 全部 `ctx.get` 可选读取 + client slot（sidebar.footer.action / shell.overlay / conversation.session.header.utilities / conversation.chat.commandview / settings.plugin.item）是否仍存在、形状是否兼容。rc.8 校验通过（见 commit `5a00d11`/`04a4600` 前后；原文 `9b98c07` 为早期改写前坐标）；**0.1.5-rc.1 体检完成（0.12.2，全绿）**——当年在 0.1.2-alpha.1 记的两条「预判影响」实测结论：① `coldSnapshot` 签名确实 breaking（**已修，见 0.12.2**）② `conversation.chat.commandview` slot **未移除**（实测存在且本插件 seat active，该预判有误）。**教训**：预判影响必须落成实测项，否则会像 coldSnapshot 一样潜伏三个版本（fail-soft 路径无症状）
