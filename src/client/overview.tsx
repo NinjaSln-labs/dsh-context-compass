@@ -305,6 +305,9 @@ export function OverviewBody(props: {
             ×
           </button>
         </div>
+        {/* 表头与数据行必须共用同一个横向滚动容器，否则列宽超过面板宽度时两者
+            会各自滚动、对不齐。列定义在 .sh-grid-cols（表头与行都挂它）。 */}
+        <div className="sh-panel-scroll">
         <div className="sh-panel-head-row sh-grid-cols" role="row">
           <button type="button" className={`sh-col-head${sortMode === 'severity' ? ' sh-sort-active' : ''}`} onClick={() => changeSort('severity')} aria-label="按健康状态排序">健康{sortMode === 'severity' ? '↓' : ''}</button>
           <span title="运行中=智能体正在处理回回合；已加载=内存驻留待命；冷却=仅持久化">状态</span>
@@ -395,6 +398,8 @@ export function OverviewBody(props: {
           ) : null}
           <span className="sh-foot-hint">每 5 秒刷新 · 点击行打开并运行 /compass · 点表头切换排序 · Esc 关闭</span>
         </div>
+        </div>
+
       </div>
     </div>
   )

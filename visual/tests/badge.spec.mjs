@@ -74,3 +74,25 @@ test('浮层 B2/B3：更多详情折叠 + 复制交接摘要按钮', async ({ pa
   await copyBtn.click()
   await expect(copyBtn).toHaveText(/已复制/, { timeout: 10_000 })
 })
+
+// 字号适配（浮层部分）：文字放大后，浮层里的值不得从**词中间**断开。此前
+// overflow-wrap:anywhere 会把「（缓存命中 0%）」拆成「（缓存命中」+「0%）」。
+// 判定方式：多行渲染时，若每行宽度都远小于整块内容宽，说明是被硬切而非自然折行。
+test('浮层：文字放大后值不得从词中间断开', async ({ page }) => {
+  const badge = page.locator('.sh-badge').first()
+  for (const zoom of [1, 1.5]) {
+    await page.evaluate((z) => { document.body.style.zoom = z === 1 ? '' : String(z) }, zoom)
+    await badge.hover()
+    await expect(page.locator('.sh-tip')).toBeVisible({ timeout: 10_000 })
+    await page.waitForTimeout(300)
+    const broken = await page.locator('.sh-tip .sh-v').evaluateAll((els) =>
+      els.filter((e) => {
+        const rects = e.getClientRects()
+        if (rects.length < 2) return false
+        const widest = Math.max(...rects.map((r) => r.width))
+        return widest < e.scrollWidth * 0.6
+      }).map((e) => e.textContent?.trim().slice(0, 24)))
+    expect(broken, `zoom=${zoom}：浮层值不得从词中间断开`).toEqual([])
+  }
+  await page.evaluate(() => { document.body.style.zoom = '' })
+})

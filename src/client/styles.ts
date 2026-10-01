@@ -23,9 +23,13 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-tip-title{font-size:13px;color:var(--dsw-alias-label-secondary);margin-bottom:8px}
 .sh-tip-title .sh-sev-label{color:var(--sh-ink,var(--dsw-alias-label-secondary));font-weight:600}
 .sh-tip-advice{font-size:13px;line-height:1.6;padding:8px 10px;border-radius:8px;font-weight:600;color:var(--sh-ink,var(--dsw-alias-label-primary));background:var(--sh-tint,transparent);margin-bottom:8px;overflow-wrap:anywhere}
-.sh-tip-row{display:flex;align-items:center;gap:10px;line-height:2}
+.sh-tip-row{display:flex;align-items:center;gap:10px;line-height:2;flex-wrap:wrap}
+/* 值不再从**词中间**断开。此前 overflow-wrap:anywhere 会把「（缓存命中 0%）」拆成
+   「（缓存命中」+「0%）」这类断法——字号一大就必现。改成 normal 后值只在空格处断，
+   而外层 flex-wrap 让「标签 + 值」放不下时整体折行：值落到自己一整行，右侧对齐。
+   单个值本身比整行还长时（极长标题）仍会断，但只断在词边界，不再切碎数字与单位。 */
 .sh-tip-row .sh-k{color:var(--dsw-alias-label-secondary);flex:none}
-.sh-tip-row .sh-v{color:var(--dsw-alias-label-secondary);margin-left:auto;font-variant-numeric:tabular-nums;overflow-wrap:anywhere;min-width:0}
+.sh-tip-row .sh-v{color:var(--dsw-alias-label-secondary);margin-left:auto;font-variant-numeric:tabular-nums;overflow-wrap:normal;min-width:0;text-align:right}
 .sh-cost-toggle{cursor:pointer;border-radius:4px}
 .sh-cost-toggle:hover{background:var(--dsw-alias-interactive-bg-hover)}
 .sh-cost-toggle:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
@@ -79,12 +83,18 @@ body[data-ds-dark-theme] .sh-sev-red{--sh-accent:color-mix(in srgb,var(--dsw-ali
 .sh-panel-close:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:1px}
 /* The list keeps the height of exactly 5 rows whether or not there are 5 —
    the panel never resizes (no visual jump when sessions come and go). */
-.sh-panel-list{overflow-y:auto;padding:8px 0;flex:none;overscroll-behavior:contain;height:calc(41px * 5 + 16px);box-sizing:border-box}
+.sh-panel-list{overflow-y:auto;min-width:max-content;padding:8px 0;flex:none;overscroll-behavior:contain;height:calc(41px * 5 + 16px);box-sizing:border-box}
 /* Table-like layout: one grid per header/row, identical columns — title,
    workspace and numbers never misalign. Columns: sev | session | ws | occ |
    round | scale | created. */
-.sh-grid-cols{grid-template-columns:80px 46px 46px 50px 54px 76px 56px;justify-content:start}
-.sh-panel-head-row{display:grid;gap:14px;align-items:center;box-sizing:border-box;width:100%;padding:9px 16px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;font-weight:500;color:var(--dsw-alias-label-tertiary);letter-spacing:.03em;font-variant-numeric:tabular-nums}
+/* 列宽随内容伸缩（minmax(min-content,…)），不再写死 px：字号变大时「已加载」
+   这类三字单元格原本被 46px 卡死、折成两行。字号小时 min-content 仍给出原来的
+   紧凑宽度，视觉不变；字号大时列自然变宽，而不是把字拆断。
+   表格整体放不下时由外层横向滚动兜底（见 .sh-panel-body）。 */
+.sh-panel-scroll{overflow-x:auto;overscroll-behavior-x:contain}
+.sh-grid-cols{grid-template-columns:minmax(72px,auto) repeat(4,minmax(min-content,auto)) minmax(72px,auto) minmax(56px,auto);justify-content:start}
+.sh-grid-cols > *{white-space:nowrap}
+.sh-panel-head-row{display:grid;min-width:max-content;gap:14px;align-items:center;box-sizing:border-box;width:100%;padding:9px 16px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:11px;font-weight:500;color:var(--dsw-alias-label-tertiary);letter-spacing:.03em;font-variant-numeric:tabular-nums}
 .sh-col-head{border:none;background:transparent;color:inherit;font:inherit;padding:0;cursor:pointer;text-align:left;border-radius:4px;display:inline-flex;align-items:center;gap:3px}
 .sh-panel-head-row .sh-row-num.sh-col-head{justify-content:flex-end;width:100%}
 .sh-col-head:hover{color:var(--dsw-alias-label-primary)}

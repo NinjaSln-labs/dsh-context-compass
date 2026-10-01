@@ -79,3 +79,29 @@ test('panel: Esc 关闭 + 遮罩点击关闭', async ({ page }) => {
   await page.locator('.sh-scrim').click({ position: { x: 10, y: 450 } })
   await expect(page.locator('.sh-panel')).toBeHidden()
 })
+
+// 字号适配（表格部分）：宿主/浏览器的文字缩放会把整页放大。固定列宽 +
+// overflow-wrap:anywhere 在这种条件下会把「已加载」折成两行。浮层那半在本套件
+// 里测不了——panel spec 不开会话、没有徽章可悬停，它在 badge.spec.mjs。
+test('面板：文字放大后单元格不得折行', async ({ page }) => {
+  await setTheme(page, 'light')
+  await openOverview(page)
+  await mockOverview(page, rpcPayload(FIVE_TIER_ROWS))
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await openOverview(page)
+
+  for (const zoom of [1, 1.5]) {
+    await page.evaluate((z) => { document.body.style.zoom = z === 1 ? '' : String(z) }, zoom)
+    await settle(page)
+
+    // 不允许出现「接近两倍行高」的单元格——那正是折行的特征。
+    // 注意不能断言各格行高相等：严重度那格是带 padding/边框的 chip，本就更高。
+    const cells = await page.locator('.sh-panel-row').first().evaluate((row) =>
+      [...row.children].map((c) => Math.round(c.getBoundingClientRect().height)))
+    const lo = Math.min(...cells)
+    const hi = Math.max(...cells)
+    expect(hi, `zoom=${zoom}：面板单元格不得折行（最高 ${hi} vs 最低 ${lo}）`).toBeLessThan(lo * 1.6)
+
+    await page.evaluate(() => { document.body.style.zoom = '' })
+  }
+})
