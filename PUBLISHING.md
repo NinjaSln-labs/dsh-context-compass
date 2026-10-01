@@ -2,14 +2,30 @@
 
 **2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-09-10 更新）
+## 发布状态（2026-10-02 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.12.2`（latest，OIDC 发布，带 provenance）——升级体检（dsh 0.1.5-rc.1）+ 修「冷会话检查点健康读自 0.11.1 起静默失效」 |
+| npm | ✅ `dsh-context-compass@0.13.1`（latest，OIDC 发布，带 provenance）——0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
-| 本地验证 | ✅ file: 安装 + 重启 profile 实测：RPC **首帧即 7 行且三帧稳定**（无 16→6 闪现），与侧边栏真值逐 id 对账全等（0.11.6 rc1，2026-09-03） |
+| 本地验证 | ✅ file: 安装 + 重启 profile 实测：门禁七步全绿、contract-check 5/5、visual 8/8（0.13.1，2026-10-01） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
+
+### npm 收录有延迟，job 绿 ≠ 已在 registry
+
+`npm publish` 回 **HTTP 202** 只表示「已受理、处理中」，随即 exit 0 → CI job 变绿，
+但版本尚未进 packument。实测：`0.13.0` 约 3.75 分钟落地，`0.13.1` 约 **17 分钟**。
+
+判据按三态看，别把「已受理未落地」当成「没发出去」：
+
+| 状态 | 判据 |
+|---|---|
+| 被拒 | publish 非 0 退出 / 无 202 |
+| 已受理未落地 | 202 + `registry.npmjs.org/<pkg>/<version>` 返回 404 —— 继续等 |
+| 已落地 | 版本文档 200 / `npm view <pkg>@<version>` 可解析 |
+
+约定：**发版后留 30 分钟窗口**再判定，不为此给 CI 加轮询。2026-10-01 发 0.13.1 时在
+落地前 77 秒查了一次 404，被误报成「没发布」——延迟是常态，耐心等即可。
 
 ## 版本历史
 
