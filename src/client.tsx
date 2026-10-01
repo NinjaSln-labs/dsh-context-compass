@@ -18,7 +18,10 @@
  * Clicking the badge runs `/compass` through the core commands Remote
  * (`remote.commands`, always mounted) for the full textual report.
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+// 0.2.0-rc.2 起宿主 client 入口签名是 cordis 原生 Context
+// （dsh-cordis-client-runner/lib/types/client/index.d.ts:112
+// `apply(ctx: Context)`）；旧的 @deepseek-ai/dsh-client-runtime 整包已移除。
+import type { Context } from '@deepseek-ai/cordis'
 // Type-only: pulls the ui-conversation SlotMap merge (the header.utilities seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: the two seats below live in OTHER ui packages (ui-sidebar
@@ -80,7 +83,7 @@ export const name = 'dsh-context-compass'
 export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale']
 
 /** Client entry: register the badge + the multi-session overview panel seats. */
-export function apply(ctx: ClientContext): void {
+export function apply(ctx: Context): void {
   injectStyles()
 
   const sessions = ctx.sessions as unknown as {
@@ -164,7 +167,7 @@ export function apply(ctx: ClientContext): void {
  * without inject`（0.2.0-rc.2 首次实测撞到）。`ctx.get` 是唯一无 inject 要求的读法，
  * 未提供时返回 undefined。
  */
-function bindCompassCard(ctx: ClientContext): ReturnType<typeof createSettingsCard> | undefined {
+function bindCompassCard(ctx: Context): ReturnType<typeof createSettingsCard> | undefined {
   const scope = (ctx as unknown as { get(name: string): { bind(spec: { namespace: string }): unknown } | undefined })
     .get('settingsScope')
   if (scope === undefined || typeof scope.bind !== 'function') {

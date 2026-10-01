@@ -27,11 +27,53 @@ import { request } from 'node:http'
 const base = process.env.DSH_WEB_URL || 'http://127.0.0.1:3080'
 const BASE_URL = new URL(base)
 
+/**
+ * 0.2.0-rc.2 起的入口鉴权是「一次性 token 换签名 cookie」（见宿主
+ * dsh-client-connection/lib/index.js:391 `authorizeIndex`）：
+ *   - 只有 `GET /` 且带恰好一个合法 `?token=` 才 303 下发 `Set-Cookie:
+ *     dsh-auth-*`（HttpOnly/SameSite=Strict）并跳回 `./`；
+ *   - 其余请求一律按「每请求校验 cookie」处理，无 cookie → 401/405。
+ * 所以只把 DSH_WEB_URL 的 token 挂在请求 query 上是不够的：query 换不成
+ * cookie，非 index 请求不会受理。必须先 GET 入口换 cookie，再带上它。
+ */
+let authCookie = ''
+
+function httpGet(path) {
+  return new Promise((resolve) => {
+    const req = request(
+      { hostname: BASE_URL.hostname, port: BASE_URL.port, path, method: 'GET' },
+      (res) => {
+        res.resume()
+        res.on('end', () => resolve({ status: res.statusCode, setCookie: res.headers['set-cookie'] }))
+      },
+    )
+    req.on('error', (e) => resolve({ error: e }))
+    req.end()
+  })
+}
+
+async function authenticate() {
+  // 无 token 可传时也 GET 一次入口：已有 cookie 的情形由调用方注入不了，
+  // 但本地开发常见的是「只给了 DSH_WEB_URL 带 token」，故走交换流程。
+  const r = await httpGet('/' + (BASE_URL.search || ''))
+  if (r.error) return { ok: false, reason: r.error.code ?? 'connection failed' }
+  const cookies = r.setCookie ?? []
+  const c = cookies.find((s) => s.startsWith('dsh-auth-'))
+  if (c) authCookie = c.split(';')[0]
+  return { ok: Boolean(authCookie), status: r.status }
+}
+
 /** POST 一段原文 body（raw，非 JSON.stringify，用于测非法 JSON）。 */
 function postRaw(path, raw) {
   return new Promise((resolve) => {
     const req = request(
-      { hostname: BASE_URL.hostname, port: BASE_URL.port, path, method: 'POST', headers: { 'content-type': 'application/json' } },
+      {
+        hostname: BASE_URL.hostname,
+        port: BASE_URL.port,
+        path,
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(authCookie ? { cookie: authCookie } : {}) },
+      },
       (res) => {
         let data = ''
         res.on('data', (c) => (data += c))
@@ -58,6 +100,15 @@ async function main() {
   console.log(`\n=== dsh-context-compass live 契约检查 ===`)
   console.log(`目标 harness: ${base}\n`)
 
+  // 0) 入口鉴权：token → 签名 cookie 交换（0.2.0-rc.2 契约，见 authenticate）。
+  const auth = await authenticate()
+  if (!auth.ok) {
+    console.log(`⚠️  harness 未运行或未完成鉴权（${auth.reason ?? `入口返回 ${auth.status}，未签发 dsh-auth-* cookie`}）——跳过契约检查（exit 2，非插件问题）`)
+    console.log('    提示：DSH_WEB_URL 需为 dsh web 启动时打印的带 token 入口 URL。')
+    process.exit(2)
+  }
+  pass('入口鉴权', 'token → dsh-auth-* cookie 交换成功')
+
   // 1) 连通性 + 路由存在性：POST 非法 JSON。
   const probe = await postRaw(RPC, '{ bad json')
   if (probe.error || probe.status === undefined) {
@@ -66,6 +117,11 @@ async function main() {
   }
   if (probe.status === 404) {
     fail('插件 RPC 路由存在', `/${RPC} 返回 404 —— 插件未挂载或 webServer 注入后未能注册路由（升级 API 漂移？）`)
+    console.log('')
+    process.exit(1)
+  }
+  if (probe.status === 401 || probe.status === 405) {
+    fail('插件 RPC 路由存在', `POST → ${probe.status} —— 0.2.0-rc.2 下宿主对未注册路径也回 405（非 404），${probe.status === 405 ? '该状态码已不能区分「插件未挂载」与「路径不存在」，需查 dsh 启动日志确认插件是否被 peer 兼容性闸门拒绝' : '鉴权未通过'}`)
     console.log('')
     process.exit(1)
   }
