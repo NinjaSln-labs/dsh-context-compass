@@ -80,7 +80,8 @@ export const name = 'dsh-context-compass'
  * 永远 pending → **整个 client bundle 静默不挂载**（徽章/面板/命令卡全没，零报错）。
  * C2 改为下面 `bindCompassCard()` 里的可选探测。
  */
-export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale']
+// uiWorkspace 是必需的：0.2.0-rc.2 起会话导航只此一条（ctx.sessions.open 已删）。
+export const inject = ['slots', 'sessions', 'remote', 'remote.commands', 'locale', 'uiWorkspace']
 
 /** Client entry: register the badge + the multi-session overview panel seats. */
 export function apply(ctx: Context): void {
@@ -88,10 +89,14 @@ export function apply(ctx: Context): void {
 
   const sessions = ctx.sessions as unknown as {
     binding(sessionId: string): { session: { projections: { faceOf(key: string): ProjectionFace | undefined } } } | undefined
-    open(id: string): void
     /** Session-list store: byId rows carry `updatedAt` (last activity, epoch ms). */
     list: { getSnapshot(): { byId: Record<string, { updatedAt?: number }> } }
   }
+  // 0.2.0-rc.2：会话导航不在 ctx.sessions 上（ISessions 注释：navigation belongs
+  // to view owners），改由视图 owner 提供。缺它时面板仍可浏览，只是点行不跳转。
+  const uiWorkspace = (ctx as unknown as {
+    uiWorkspace?: { openSession(target: string): void }
+  }).uiWorkspace
   const commands = (ctx.remote as unknown as { commands: CommandsRemote }).commands
   const locale = (ctx as unknown as { locale: { snapshot: { active: string } } }).locale
 
@@ -141,6 +146,7 @@ export function apply(ctx: Context): void {
       <OverviewPanel
         store={overviewStore}
         sessions={sessions}
+        uiWorkspace={uiWorkspace}
         commands={commands}
         locale={locale}
       />

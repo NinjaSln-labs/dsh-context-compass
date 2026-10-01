@@ -19,6 +19,7 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { Context } from '@deepseek-ai/cordis'
+import { makeCommandsExecute, resetCommandCalls, commandCalls } from './tests/helpers.mjs'
 
 const require = createRequire(import.meta.url)
 
@@ -46,6 +47,7 @@ assert.ok(plugin.inject.includes('remote'), 'ctx.remote reads need the remote ro
 assert.ok(plugin.inject.includes('remote.commands'), 'remote.commands sub-service must be injected')
 assert.ok(!plugin.inject.includes('remote.sessionHealth'), 'a plugin Remote can never mount client-side — must not be injected')
 assert.ok(plugin.inject.includes('locale'), 'locale must be injected for the currency-by-region display')
+assert.ok(plugin.inject.includes('uiWorkspace'), 'uiWorkspace must be injected — 0.2.0-rc.2 removed ctx.sessions.open, so this is the only session-navigation path')
 console.log('  ok  bundle registered via __ModuleLoader__ with apply/inject/name')
 
 // 2b) The /compass report parser is exported and correct.
@@ -180,13 +182,16 @@ ctx.provide('slots', {
 ctx.provide('sessions', {
   binding: () => ({ session: { projections: { faceOf: () => undefined } } }),
 })
-ctx.provide('remote', {
-  commands: { execute: async () => ({ ok: true }) },
-})
-ctx.provide('remote.commands', {
-  execute: async () => ({ ok: true }),
-})
+// execute 桩按宿主真实契约（元数 + 附件数组）守卫，见 helpers.mjs 的说明。
+const commandsExecute = makeCommandsExecute()
+ctx.provide('remote', { commands: { execute: commandsExecute } })
+ctx.provide('remote.commands', { execute: commandsExecute })
 ctx.provide('locale', { snapshot: { active: 'zh' } })
+// 0.2.0-rc.2 的会话导航 owner（ctx.sessions.open 已删）——见 overview.tsx openSession。
+const openSessionCalls = []
+ctx.provide('uiWorkspace', {
+  openSession: (target) => { openSessionCalls.push(target) },
+})
 const settingsScopeBinds = []
 let settingsScopeGets = 0
 ctx.provide('settingsScope', {
@@ -239,6 +244,34 @@ assert.equal(settingsReg[0].name, 'settings.plugin.item')
 assert.equal(settingsReg[0].key, 'context-compass')
 console.log('  ok  apply ran: badge + overview opener + overview panel + /compass card seats + settings card')
 
+// 4b) commands.execute 桩的契约保真度（0.2.0-rc.2 破口回归）。
+//     徽章点击与面板点行走同一条 execute 路径，两处调用点都有 try/catch 静默。
+//     本套件不渲染组件（无 DOM），故此处断言的是「桩按宿主真实元数守卫」——
+//     桩一旦回退成 `async () => ({ok:true})`，两参调用就会重新全盲。真正的
+//     运行时证据在 visual badge spec（点行/点徽章）与活宿主取证里。
+{
+  resetCommandCalls()
+  await commandsExecute('sess-1', '/compass', [])
+  assert.deepEqual(commandCalls.at(-1)?.slice(0, 2), ['sess-1', '/compass'], 'execute 前两参：agentId + line')
+  assert.deepEqual(commandCalls.at(-1)?.[2], [], '第三参 submittedAttachments 必须是数组（纯文本调用传空数组）')
+  let threw = null
+  try { await commandsExecute('sess-1', '/compass') } catch (e) { threw = e.message }
+  assert.match(threw ?? '', /expected 3 business argument\(s\)/, '两参调用必须被桩拒绝——否则等于退回旧的全盲桩')
+  console.log('  ok  commands.execute 桩: 三参契约保真（两参被拒，对齐宿主 facade 元数守卫）')
+}
+// 4c) 会话导航契约（0.2.0-rc.2 破口回归）：ctx.sessions.open 已删除，面板点行
+//     改走 ctx.uiWorkspace.openSession。旧路径抛 TypeError 且被 try/catch 吞掉，
+//     点行后连一次会话 API 都不发——纯静默失效。
+{
+  openSessionCalls.length = 0
+  const nav = ctx.get('uiWorkspace')
+  assert.ok(nav !== undefined && typeof nav.openSession === 'function', 'uiWorkspace 服务必须提供 openSession')
+  nav.openSession('sess-42')
+  assert.deepEqual(openSessionCalls, ['sess-42'], 'openSession 必须把目标 id 交给视图 owner')
+  assert.equal(typeof ctx.get('sessions').open, 'undefined', 'ctx.sessions.open 在 0.2.0-rc.2 已不存在（桩不得再提供它，否则会掩盖漏改）')
+  console.log('  ok  会话导航: uiWorkspace.openSession 在位，ctx.sessions.open 确认已移除')
+}
+
 // 5) The stylesheet was injected the client-modules way.
 assert.equal(styleTags.length, 1, 'apply must create exactly one style tag')
 assert.equal(styleTags[0].dataset.plugin, 'dsh-context-compass', 'style tag must carry data-plugin (HMR ownership)')
@@ -257,9 +290,11 @@ console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compas
     register: (...args) => args,
   })
   bare.provide('sessions', { binding: () => undefined, open: () => {}, list: { getSnapshot: () => ({ byId: {} }) } })
-  bare.provide('remote', { commands: { execute: async () => ({ ok: true }) } })
-  bare.provide('remote.commands', { execute: async () => ({ ok: true }) })
+  const bareExecute = makeCommandsExecute()
+  bare.provide('remote', { commands: { execute: bareExecute } })
+  bare.provide('remote.commands', { execute: bareExecute })
   bare.provide('locale', { snapshot: { active: 'zh' } })
+  bare.provide('uiWorkspace', { openSession: () => {} })
   // 刻意不 provide settingsScope —— 复刻宿主 0.2.0-rc.2 的实况。
   let applied = false
   try {

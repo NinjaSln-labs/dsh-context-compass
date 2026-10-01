@@ -146,7 +146,9 @@ export function OverviewAction(props: {
 /** Full-screen overview panel; renders null while closed. */
 export function OverviewPanel(props: {
   store: OverviewStore
-  sessions: { open(id: string): void; list: { getSnapshot(): { byId: Record<string, { updatedAt?: number }> } } }
+  sessions: { list: { getSnapshot(): { byId: Record<string, { updatedAt?: number }> } } }
+  /** 缺省（服务未注入）时点行只关面板不跳转——不抛，徽章等功能不受影响。 */
+  uiWorkspace?: { openSession(target: string): void }
   commands: CommandsRemote
   locale: { snapshot: { active: string } }
 }): JSX.Element | null {
@@ -157,7 +159,9 @@ export function OverviewPanel(props: {
 
 export function OverviewBody(props: {
   store: OverviewStore
-  sessions: { open(id: string): void; list: { getSnapshot(): { byId: Record<string, { updatedAt?: number }> } } }
+  sessions: { list: { getSnapshot(): { byId: Record<string, { updatedAt?: number }> } } }
+  /** 缺省（服务未注入）时点行只关面板不跳转——不抛，徽章等功能不受影响。 */
+  uiWorkspace?: { openSession(target: string): void }
   commands: CommandsRemote
   locale: { snapshot: { active: string } }
 }): JSX.Element {
@@ -238,12 +242,21 @@ export function OverviewBody(props: {
   const close = () => props.store.setOpen(false)
   const isZh = (props.locale?.snapshot?.active ?? 'zh') === 'zh'
   const openSession = (id: string) => {
-    try { props.sessions.open(id) } catch { /* 静默 */ }
-    // 冷会话：sessions.open 是异步加载（agent 初始化），立即 execute 会在
+    // 0.2.0-rc.2：`ctx.sessions.open()` 已删除——ISessions 的注释明写
+    // 「navigation belongs to view owners」（见
+    // dsh-api-session-controller/lib/types/client/contract/sessions.d.ts:41）。
+    // 导航改由视图 owner 提供：ctx.uiWorkspace.openSession(target)
+    // （dsh-client-ui-workspace/lib/types/client/navigation.d.ts:15）。
+    // 旧调用抛 TypeError 且被下面的 try/catch 吞掉 → 点行毫无反应、连一次
+    // 会话 API 都不发，是最难自查的一类静默失效。
+    try { props.uiWorkspace?.openSession(id) } catch { /* 静默 */ }
+    // 冷会话：打开是异步的（agent 初始化），立即 execute 会在
     // UI request 的 signal 被 abort（面板 close/组件卸载）时让 assess 中途
     // 挂掉 → 「执行失败 This operation was aborted」。给加载一点时间再发。
     window.setTimeout(() => {
-      try { void props.commands.execute(id, '/compass') } catch { /* 静默 */ }
+      // 三参 execute：见 badge.tsx runHealth 的同源说明（0.2.0-rc.2 新增
+      // submittedAttachments，纯文本调用传空数组）。
+      try { void props.commands.execute(id, '/compass', []) } catch { /* 静默 */ }
     }, 600)
     close()
   }

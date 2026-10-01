@@ -91,9 +91,16 @@ export function lagOf(
   return { lag, oldPct, newPct }
 }
 
-/** Commands Remote face (core, always mounted). */
+/**
+ * Commands Remote face (core, always mounted).
+ *
+ * 0.2.0-rc.2 起 execute 是三参（agentId, line, submittedAttachments, signal?）
+ * ——宿主契约见 dsh-commands/lib/typert.remote-client.d.ts:11。本地类型必须与
+ * 之同步：写回两参会编译通过、却在运行时被客户端 facade 的元数守卫抛错，
+ * 而调用点的 try/catch 会把它吞成静默无响应。
+ */
 export interface CommandsRemote {
-  execute(sessionId: string, line: string): Promise<unknown>
+  execute(sessionId: string, line: string, submittedAttachments: readonly unknown[], signal?: AbortSignal): Promise<unknown>
 }
 
 /** Parsed structure of one /compass report. */

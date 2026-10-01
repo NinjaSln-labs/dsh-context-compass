@@ -128,7 +128,11 @@ export function HealthBadge(props: {
   const lag = lagOf(proj, pressure)
 
   const runHealth = () => {
-    try { void props.commands.execute(props.sessionId, '/compass') } catch { /* 静默 */ }
+    // 0.2.0-rc.2 起 execute 是三参 (agentId, line, submittedAttachments, signal?)
+    // —— 见 dsh-commands/lib/typert.remote-client.d.ts:11。少传第三参会被
+    // 客户端 facade 的元数守卫直接抛（"expected 3 business argument(s)"），
+    // 命令静默不执行。纯文本调用没有附件，传空数组。
+    try { void props.commands.execute(props.sessionId, '/compass', []) } catch { /* 静默 */ }
   }
   const toggleCost = () => {
     setCostAsTokens(v => {

@@ -221,6 +221,34 @@ export function assertKeysIterable(keys) {
 export const cacheCalls = []
 export function resetCacheCalls() { cacheCalls.length = 0 }
 
+/**
+ * commands.execute 的调用实参记录 + 契约守卫。
+ *
+ * 0.2.0-rc.2 起 execute 是三参 (agentId, line, submittedAttachments, signal?)
+ * ——宿主契约见 dsh-commands/lib/typert.remote-client.d.ts:11。客户端 facade
+ * 有一道元数守卫（dsh-api-gateway/lib/client.js `prepareInvocation`），少传
+ * 直接抛 `expected 3 business argument(s) plus an optional AbortSignal`。
+ *
+ * 本桩复刻这道守卫：0.2.0 之前写 `execute(id, '/compass')` 两参时，宿主上
+ * 徽章点击与面板点行**静默失效**（try/catch 吞掉），而当时的桩是
+ * `async () => ({ok:true})`——零参函数对任何实参都通过，正是这个桩让破口
+ * 躲过了整个 client-mount 套件。桩必须按真实契约形状写。
+ */
+export const commandCalls = []
+export function resetCommandCalls() { commandCalls.length = 0 }
+export function makeCommandsExecute() {
+  return async (...args) => {
+    commandCalls.push(args)
+    if (args.length < 3) {
+      throw new Error(`client api: commands/execute expected 3 business argument(s) plus an optional AbortSignal, got ${args.length}`)
+    }
+    if (!Array.isArray(args[2])) {
+      throw new Error('client api: commands/execute submittedAttachments must be an array')
+    }
+    return { ok: true, value: undefined }
+  }
+}
+
 /** 会话格式版本：`identityOf` 的 formatVersion 来源，桩数据必须带（真实 SessionHeader 必有）。 */
 export const SESSION_FORMAT_VERSION = 5
 
