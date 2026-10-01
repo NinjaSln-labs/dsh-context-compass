@@ -1,7 +1,5 @@
 # AGENTS（AI 协作与工程纪律）
 
-通用纪律段落改 `repo-audit` 仓的 `templates/common/AGENTS-core.md` 与 `templates/categories/dsh-plugin/AGENTS-append.md`；文末「交接纪律」节是本仓自主条款，直接改本文件，不进共享模板——共享模板不能预设各仓安装了同一套技能，判据见 `.handoff/decisions/d000001`。
-
 ## 项目概览
 
 仓库根即插件目录（独立单库）。功能与使用介绍见 `README.md`；分支、提交、验证、发版规范见下与 `CONTRIBUTING.md`。
@@ -19,12 +17,7 @@
 4. 不静默绕过门禁：pre-commit/CI FAIL 先修根因；确需跳过必须留痕注明。
 5. 改动最小化：不顺手重构、不改无关文件；`lib/`、`visual/results/`、`audit-report/` 不入库，`package-lock.json` 入库。
 6. 文档同步：行为或接口变化同步 `README.md`、`README.en.md`、`DEVELOPMENT.md` 速查表。
-7. 冲突处理：通用规则与 `templates/common/AGENTS-core.md` 冲突时以模板源为准并回写；本仓自主条款以本文件为准。用户显式指示优先，冲突点在 PR 或提交说明标注。
-
-## 安全考虑
-
-- 漏洞不公开披露：走 `SECURITY.md` 的私密报告渠道。
-- 依赖与 CI action 升级走 `.github/workflows/` 既有自动化；新增依赖在 PR 说明给出理由。
+7. 用户显式指示优先于本文件，冲突点在 PR 或提交说明标注。
 
 ## 部署纪律
 
