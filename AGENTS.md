@@ -46,4 +46,4 @@ Session health for DeepSeek Harness: real token-meter data, configurable continu
 - 交接前门禁：`handoff check` 通过 + `handoff confirm` 判卷 PASS。
 - 槽外信息（放不进 9 槽的）走 `unconfirmed`，**不即兴开槽、不假装覆盖**。
 
-> ⚠️ **模板源待回写**：本节为 2026-10-01 迁移时按用户指示**只在本仓手工添加**，未写回生成它的模板源（`repo-audit` 仓 `templates/categories/dsh-plugin/AGENTS-append.md`），以免波及全部 dsh 插件仓的 scaffold 合并面。**下次动 `repo-audit` 模板时须把本节并入分类 append 并重跑 `scaffold --update`**，否则本节会在模板更新时被覆盖。跟踪见 `.handoff/` actions。
+> **本节为何手写在此、不进共享模板**：每个仓库独立，共享模板（`repo-audit` 仓的 `templates/`）**不能预设用户安装了同一套技能**——把依赖某个技能的约定塞进通用模板，等于对所有下游仓预设了它们没选的东西。本节是本仓自主条款，**不进模板、不外推**；其它仓要用，各自仓内独立声明。
