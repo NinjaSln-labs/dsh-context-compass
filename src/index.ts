@@ -50,40 +50,52 @@ export default {
   name,
   Config,
   apply(ctx: Context, config: ConfigType = {}): void {
-    // C1 live config source: starts at the composition entry (resolveConfig
-    // normalizes for direct-call paths), installSettingsSection repoints it at
-    // the settings scope while a settings service is mounted and falls back to
-    // the entry when it goes away. All consumers read through source() at USE
-    // time — threshold changes reach the badge on the next push frame.
+    // C1 live config source。0.2.0-rc.2 起宿主 settings 换成 `SettingsForms`
+    // （从 Config schema 派生表单），旧的 `installSection` 已删除，setSource /
+    // validate / onChange 三个钩子没有对应物。新的接法是：
+    //   1. schema 里把「改完即生效」的字段标 `.volatile()`（见 config.ts）——
+    //      SettingsForms 只暴露 volatile 字段，未标的连表单都不生成；
+    //   2. `settings.configure({ auto: true })` 注册自动页面——宿主据此用本插件的
+    //      Config schema 渲染原生配置表单，写入由它自己校验并落到 profile patch；
+    //   3. 活源语义由 volatile 单元承担：volatile 字段解析出来是带 `.get()` 的
+    //      活体单元，resolveConfig 每次读取都取当前快照，于是阈值改动在下一次
+    //      使用时即可见——不再需要手工重绑定 source。
     let source: () => ResolvedConfig = () => resolveConfig(config)
-    // ⚠️ C1 已断：宿主 0.2.0-rc.2 重构了 dsh-settings，`installSection` 被移除，
-    // 服务面换成 `SettingsForms`（从 Config schema 自动派生表单 + describe/update/
-    // replace/mutate）。本仓的 setSource 活源重绑定 / validate / onChange 三个钩子
-    // 在新契约里没有对应物，**接不回来**——需要按新契约重新设计（见 .handoff/actions）。
-    //
-    // 现状（保命）：保留调用走运行时兜底，插件不崩、配置从入口 config 读，
-    // 只是设置页的配置卡静默失效。刻意用宽类型 cast 访问——直接写
-    // `sctx.settings.installSection` 过不了类型检查，而我们要的是**运行时**那条
-    // TypeError 兜底路径，不是编译期就断。接回 C1 时删掉这个 cast。
     ctx.inject(['settings'], (sctx) => {
       try {
-        (sctx.settings as unknown as {
-          installSection: (owner: unknown, ns: string, schema: unknown, entry: unknown, hooks: Record<string, unknown>) => void
-        }).installSection(ctx, 'context-compass', Config, config, {
-          setSource: (current: () => unknown) => { source = () => resolveConfig(current() as ConfigType) },
-          onChange: () => syncProjectionUnit(),
-          validate: (value: unknown) => validateConfig(resolveConfig(value as ConfigType)),
-        })
+        sctx.effect(() => sctx.settings.configure({ auto: true }, sctx.fiber))
       } catch (err) {
-        // 预期路径（宿主 ≥0.2.0-rc.2）：installSection is not a function。
-        // 插件不崩但**设置页配置卡失效**（配置只能改配置文件）——这是已知待重接的
-        // C1 断点，见 .handoff/actions，别把它当偶发告警忽略。
-        console.warn(`[dsh-context-compass] settings section 接入失败（宿主 0.2.0-rc.2 起 installSection 已移除，C1 待重接），回落入口 config：${err instanceof Error ? err.message : String(err)}`)
+        // 配置表单不可用（无 settings 服务 / 本条目没有 volatile 字段）。
+        // 插件不崩，配置仍从入口 config 读——只是设置页没有本插件的表单。
+        console.warn(
+          `[dsh-context-compass] settings.configure 失败（配置表单不可用，配置请改 profile patch）：${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     })
-    // Stable reader: setSource REASSIGNS `source`, so consumers must capture
-    // this wrapper (not the current thunk) to see later assignments.
-    const configSource = (): ResolvedConfig => source()
+    // 跨字段护栏的落点变了。0.2.0 之前 `hooks.validate` 能**写时拒绝**非单调的
+    // 阈值阶梯；新契约里 SettingsForms 只做 schema 级校验（范围/类型），跨字段
+    // 关系没有对应钩子。与其丢掉这层保护（阶梯错乱会让 severity 排序静默失真），
+    // 改为**读时兜底**：解析出的配置若违反单调性或含非有限值，就回落默认值并
+    // 只告警一次。触发来源是被手改的 profile patch（settings 写入路径已被
+    // schema 挡住），属罕见路径，兜底比抛错更合适。
+    let guardWarned = false
+    const guardedConfig = (): ResolvedConfig => {
+      const resolvedNow = source()
+      try {
+        validateConfig(resolvedNow)
+        return resolvedNow
+      } catch (err) {
+        if (!guardWarned) {
+          guardWarned = true
+          console.warn(
+            `[dsh-context-compass] 配置未通过跨字段校验，已回落默认值（请检查 profile patch）：${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+        return resolveConfig({})
+      }
+    }
+    // Stable reader: consumers capture this wrapper, never the current value.
+    const configSource = (): ResolvedConfig => guardedConfig()
     const resolved = source()
 
     // 0.11.5/0.11.6 方案 A：挂载即预热 blank 真值图，带重试——sessionController

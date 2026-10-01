@@ -17,6 +17,8 @@
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
 import { assertKeysIterable } from './tests/helpers.mjs'
+import { updateVolatile } from '@deepseek-ai/cosmokit'
+import { Config } from '../lib/config.js'
 
 const session = { header: { cwd: '/tmp/ws' } }
 const registrations = { commands: null, tools: null, projections: null, routes: [] }
@@ -203,50 +205,59 @@ try {
   c1Ctx.provide('sessionProjectionCache', { cachedSnapshot: (meta, keys) => { assertKeysIterable(keys); return { values: {} } } })
   c1Ctx.provide('sessionTitle', { get: () => undefined })
   c1Ctx.provide('sessionProjections', { register: () => () => {}, snapshot: () => ({ values: {} }) })
+  // 0.2.0-rc.2 的 settings 契约：SettingsForms 只做「注册自动页面 + schema 级
+  // 写入」，插件侧不再有 installSection / setSource / validate / onChange。
+  // 活源语义改由 volatile 单元承担：标了 `.volatile()` 的字段解析出来是带
+  // `.get()` 的活体单元（cosmokit Volatile<T>，只有 get，写在宿主手里），
+  // resolveConfig 每次读取取当前快照 → 改完下一次使用即生效。
+  //
+  // 桩按真实形状写：只提供 configure，并断言 auto 策略。老写法
+  // `installSection: async () => {}` 那种「万能桩」会让 configure 被漏改也测不出来。
   const fake = {
-    registered: null, watchCb: null, value: null,
-    // 新 API（dsh-settings@0.1.2-alpha.4）：consumer 调 settings.installSection(owner, ns, schema, entry, hooks)。
-    installSection(owner, ns, schema, entry, hooks) {
-      fake.registered = { ns, schema, entry, hooks }
-      fake.value = schema({ ...(entry ?? {}) })
-      // setSource：权威值来源指向 scope.get()（插件内部会转 resolveConfig）。
-      hooks.setSource(() => fake.value)
-      // watch：写入后驱动 onChange（投影重判定、live 接线）。
-      const watcher = () => hooks.onChange()
-      fake.watchCb = watcher
-      // attach 通知（真实 provider installSection 语义）。
-      hooks.onChange()
-      return {
-        get: () => fake.value,
-        watch: cb => { fake.watchCb = cb; return () => {} },
-      }
-    },
-    // 模拟一次 settings 写入：schema 解析 → 提交 → watch 推送。
-    async write(patch) {
-      fake.value = fake.registered.schema({ ...fake.value, ...patch })
-      fake.watchCb?.(fake.value, fake.value)
+    configured: [],
+    configure(presentation, owner) {
+      fake.configured.push({ presentation, hasOwner: owner !== undefined })
+      return () => {}
     },
   }
   c1Ctx.provide('settings', fake)
-  await c1Ctx.plugin(plugin).await()
+
+  // volatile 活源：单元不是本仓造的——schemastery 解析 `.volatile()` 字段时
+  // 直接产出 cosmokit 的 Volatile 引用（有 get + 隐藏的 write 通道）。宿主
+  // SettingsForms 写入 profile patch 后，由 cordis-plugin-loader 重新解析并
+  // updateVolatile 把新值推进既有单元（见 _commitVolatile）。所以桩要复刻的
+  // 是「解析 → 拿到单元 → 推进单元」这条真实链路，不是手工造 cell。
+  // 交给 cordis 的是**裸**配置，由它按 Config schema 解析（volatile 单元就在
+  // 这一步产生）。解析结果挂在 fiber 上——那才是插件 apply 真正收到的那份。
+  const fiber = await c1Ctx.plugin(plugin, {}).await()
   await new Promise(resolve => setTimeout(resolve, 50))
-  assert.ok(fake.registered, 'settings namespace registered while the service is mounted')
-  assert.equal(fake.registered.ns, 'context-compass', 'ns is the plugin short name')
-  assert.equal(typeof fake.registered.hooks.validate, 'function', 'cross-field validate wired')
-  // validate：非单调阈值在写入口被拒（schema 表达不了的跨字段约束）。
-  assert.throws(
-    () => fake.registered.hooks.validate(fake.registered.schema({ thresholds: { windowMid: 0.9, windowHigh: 0.5, windowCritical: 0.8 } })),
-    /单调递增/,
-  )
-  // live 写入：windowHigh 0.5 → 0.25，30% 占比从蓝升黄（无重启、无重挂）。
-  // （c1Ctx 投影快照为空 → assess 走 tokenMeter 路径：300K/1M = 30%。）
+  const entry = fiber.config
+  assert.equal(fake.configured.length, 1, 'settings.configure called once while the service is mounted')
+  assert.equal(fake.configured[0].presentation.auto, true, 'auto:true — 本插件无自定义设置页，须由宿主从 Config schema 派生表单')
+  assert.equal(fake.configured[0].hasOwner, true, 'configure must receive the owning fiber')
+  assert.equal(typeof entry.thresholds.windowHigh.get, 'function', 'volatile 字段必须解析成带 get() 的活体单元')
+  assert.equal(entry.thresholds.windowHigh.get(), 0.5, '单元当前值来自 schema 默认值')
   assert.equal(c1Regs.tools !== null, true, 'tool registered on the settings-mounted context')
   const c1Before = await c1Regs.tools.execute({}, { agent: { id: 'agent-1', session }, signal: new AbortController().signal })
   assert.equal(c1Before.severity, 'blue')
-  await fake.write({ thresholds: { ...fake.value.thresholds, windowHigh: 0.25 } })
+  // 模拟一次宿主设置写入：重新解析出带新值的单元，再推进既有单元。
+  // 单调阶梯 0.1/0.2/0.8：30% 占比跨过 windowHigh(0.2) → 蓝升黄。
+  // （早先取 0.25 会让 0.3 < 0.25 失序，被新的读时护栏正确地回落成默认档——
+  //  这正说明护栏在起作用，不是缺陷。）
+  const written = Config({ thresholds: { windowMid: 0.1, windowHigh: 0.2, windowCritical: 0.8 } })
+  for (const key of ['windowMid', 'windowHigh', 'windowCritical']) {
+    updateVolatile(entry.thresholds[key], written.thresholds[key])
+  }
   const c1After = await c1Regs.tools.execute({}, { agent: { id: 'agent-1', session }, signal: new AbortController().signal })
-  assert.equal(c1After.severity, 'yellow', 'a settings write must reach the tool live (getter mode)')
-  console.log('  ok  settings ns registered + live write reaches the tool + validate refuses non-monotonic ladder')
+  assert.equal(c1After.severity, 'yellow', 'a volatile config write must reach the tool live')
+  console.log('  ok  settings.configure(auto:true) + volatile 活源：写入直达工具判定')
+
+  // 跨字段护栏：新契约没有写时钩子，改为读时兜底——阶梯被手改坏时回落默认值。
+  const broken = Config({ thresholds: { windowMid: 0.3, windowHigh: 0.9, windowCritical: 0.8 } })
+  updateVolatile(entry.thresholds.windowHigh, broken.thresholds.windowHigh)
+  const c1Broken = await c1Regs.tools.execute({}, { agent: { id: 'agent-1', session }, signal: new AbortController().signal })
+  assert.equal(c1Broken.severity, 'blue', '非单调阶梯（0.1/0.9/0.8）必须被读时护栏挡下，回落默认 0.3/0.5/0.8 → 30% 占比判蓝')
+  console.log('  ok  跨字段单调性改由读时护栏兜底：阶梯非单调 → 回落默认，不静默失真')
 
   // 7) C1-4（AUDIT）：插件 re-apply 时 settings 命名空间不得撞 already-registered。
   // 真实 provider 对重复 register 是 fail-loud——若命名空间注册骑在 provider
@@ -258,15 +269,9 @@ try {
   // hooks 齐备），而非 provider 内部去重。
   const dupGuard = {
     calls: [],
-    installSection(owner, ns, schema, entry, hooks) {
-      dupGuard.calls.push({ ns, hasSetSource: typeof hooks.setSource === 'function', hasOnChange: typeof hooks.onChange === 'function' })
-      const value = schema({ ...(entry ?? {}) })
-      hooks.setSource(() => value)
-      hooks.onChange()
-      return {
-        get: () => value,
-        watch: () => () => {},
-      }
+    configure(presentation, owner) {
+      dupGuard.calls.push({ auto: presentation?.auto, hasOwner: owner !== undefined })
+      return () => {}
     },
   }
   const mkCtx = () => {
@@ -291,10 +296,9 @@ try {
   const firstCtx = mkCtx()
   const firstFiber = await firstCtx.plugin(plugin).await()
   await new Promise(resolve => setTimeout(resolve, 50))
-  assert.equal(dupGuard.calls.length, 1, 'first apply calls settings.installSection once')
-  assert.equal(dupGuard.calls[0].ns, 'context-compass', 'ns is the plugin short name')
-  assert.equal(dupGuard.calls[0].hasSetSource, true, 'setSource hook wired')
-  assert.equal(dupGuard.calls[0].hasOnChange, true, 'onChange hook wired')
+  assert.equal(dupGuard.calls.length, 1, 'first apply calls settings.configure once')
+  assert.equal(dupGuard.calls[0].auto, true, 'auto policy is true on the first apply too')
+  assert.equal(dupGuard.calls[0].hasOwner, true, 'owning fiber passed')
   // 拆掉第一个插件 fiber（新 API 下注册责任在 provider；插件侧无残留订阅）。
   firstFiber.dispose()
   await new Promise(resolve => setTimeout(resolve, 50))

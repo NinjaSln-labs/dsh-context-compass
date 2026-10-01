@@ -106,36 +106,54 @@ export interface Config {
  *  *** 单一权威（C1）***：此 schema 的 .default() 是配置默认值的唯一来源——
  *  settings 服务路径由它归一化；resolveConfig 的 ?? 回退仅服务无 settings
  *  回退与测试路径，改默认值时两处仍需同步。 */
-export const Config: z<Config> = z.object({
+/**
+ * 0.2.0-rc.2 的 C1 接入：宿主 `SettingsForms` 只把 schema 里标了 `.volatile()`
+ * 的字段暴露成可编辑表单（`volatileForm` / `isVolatilePath`，见
+ * dsh-settings/lib/index.js:122/153），未标的字段在设置页根本不会出现，
+ * 且 `write()` 会对无 volatile 字段的条目直接抛错。
+ *
+ * 标注口径与既有语义一一对应，��是新的分类：
+ *   - volatile —— 本来就声明「改完即生效」的字段（阈值 8 / 检查项 6 /
+ *     投影开关 / 计费显示 2），宿主表单改完由 onChange 路径重新判定；
+ *   - 非 volatile —— 本来就声明「重启后生效」的计费源 4 项，保持原样。
+ * `.volatile()` 是 schemastery 原生方法（宿主自有插件 71 处在用）。
+ */
+// 0.2.0-rc.2：`.volatile()` 字段的解析类型是 cosmokit 的 `Volatile<T>` 活体单元
+// （有 `.get()`，无 `set()`——写入由宿主 SettingsForms 持有），不是裸值。故此处
+// 交给 TS 推断条目类型，不再用 `z<Config>` 强行贴合旧的裸值接口；
+// resolveConfig 通过 readVolatile 统一读法消化两种形态（单测仍喂裸值）。
+export const Config = z.object({
   thresholds: z.object({
-    windowMid: z.number().min(0).max(1).default(0.3),
-    windowHigh: z.number().min(0).max(1).default(0.5),
-    windowCritical: z.number().min(0).max(1).default(0.8),
-    economyTokenFloor: z.number().min(0).default(50000),
-    economyWindowRatio: z.number().min(0).max(1).default(0.3),
-    economyRoundFloor: z.number().min(0).default(10),
-    messageCountProxy: z.number().min(0).default(800),
-    messageCountWindowRatio: z.number().min(0).max(1).default(0.002),
+    windowMid: z.number().min(0).max(1).default(0.3).volatile(),
+    windowHigh: z.number().min(0).max(1).default(0.5).volatile(),
+    windowCritical: z.number().min(0).max(1).default(0.8).volatile(),
+    economyTokenFloor: z.number().min(0).default(50000).volatile(),
+    economyWindowRatio: z.number().min(0).max(1).default(0.3).volatile(),
+    economyRoundFloor: z.number().min(0).default(10).volatile(),
+    messageCountProxy: z.number().min(0).default(800).volatile(),
+    messageCountWindowRatio: z.number().min(0).max(1).default(0.002).volatile(),
   }),
   checks: z.object({
     git: z.object({
-      enabled: z.boolean().default(true),
-      workspaceRoot: z.string(),
+      enabled: z.boolean().default(true).volatile(),
+      workspaceRoot: z.string().volatile(),
     }),
     handoff: z.object({
-      enabled: z.boolean().default(true),
+      enabled: z.boolean().default(true).volatile(),
       /** User-named handoff documents; the concept is yours, the names are yours. */
-      paths: z.array(z.string()).default([]),
+      paths: z.array(z.string()).default([]).volatile(),
     }),
-    sessionResume: z.object({ enabled: z.boolean().default(true) }),
+    sessionResume: z.object({ enabled: z.boolean().default(true).volatile() }),
     /** 运行中进程检测（dev server 等）是增量信号——默认关闭（对齐 DESIGN §4.6「关闭时跳过」）；/compass processes 或工具路径显式开启。 */
-    processes: z.object({ enabled: z.boolean().default(false) }),
-    knowledge: z.object({ enabled: z.boolean().default(true) }),
+    processes: z.object({ enabled: z.boolean().default(false).volatile() }),
+    knowledge: z.object({ enabled: z.boolean().default(true).volatile() }),
   }),
-  projection: z.object({ enabled: z.boolean().default(true) }),
+  projection: z.object({ enabled: z.boolean().default(true).volatile() }),
   cost: z.object({
-    cacheHitDiscount: z.number().min(0).max(1).default(0.1),
-    inputPricePerM: z.number().min(0).default(0.28),
+    // 计费显示项：live 生效（readConfig 每次使用读当前值）。
+    cacheHitDiscount: z.number().min(0).max(1).default(0.1).volatile(),
+    inputPricePerM: z.number().min(0).default(0.28).volatile(),
+    // 计费源 4 项：schema 文案已注明「重启后生效」，故不标 volatile。
     priceSource: z.union([z.const('auto'), z.const('static')]).default('auto'),
     priceUrl: z.string().default('https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json'),
     priceFallbackUrl: z.string().default('https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json'),
@@ -211,38 +229,55 @@ export function validateConfig(value: ResolvedConfig): void {
 /** 双源警告（C1 后语义）：live 路径的默认值由 Config schema（settings 服务）
  *  归一化——schema 是唯一权威；此函数仅服务「无 settings 服务的回退」与
  *  纯函数测试路径，其 `??` 回退必须与 schema .default() 保持同步。 */
+/**
+ * 解包 0.2.0-rc.2 的 volatile 活体单元。
+ *
+ * 标了 `.volatile()` 的字段，解析出来是 cosmokit 的 `Volatile<T>`（只有
+ * `get()`，写入由宿主 SettingsForms 持有）；未标 volatile 的字段仍是裸值。
+ * 这里统一读法：宿主运行时读单元的当前快照，单测/旧路径喂裸值原样返回。
+ * 每次调用都重新 get()——这正是「改配置 → 下次使用即生效」的活源语义，
+ * 取代了 0.2.0 之前 settings 的 setSource 重绑定钩子。
+ */
+function live<T>(value: T | { get(): T } | undefined): T | undefined {
+  if (value === null || value === undefined) return undefined
+  if (typeof value === 'object' && typeof (value as { get?: unknown }).get === 'function') {
+    return (value as { get(): T }).get()
+  }
+  return value as T
+}
+
 export function resolveConfig(config: Config = {}): ResolvedConfig {
   const thresholds: ThresholdsConfig = {
-    windowMid: config.thresholds?.windowMid ?? 0.3,
-    windowHigh: config.thresholds?.windowHigh ?? 0.5,
-    windowCritical: config.thresholds?.windowCritical ?? 0.8,
-    economyTokenFloor: config.thresholds?.economyTokenFloor ?? 50000,
-    economyWindowRatio: config.thresholds?.economyWindowRatio ?? 0.3,
-    economyRoundFloor: config.thresholds?.economyRoundFloor ?? 10,
-    messageCountProxy: config.thresholds?.messageCountProxy ?? 800,
-    messageCountWindowRatio: config.thresholds?.messageCountWindowRatio ?? 0.002,
+    windowMid: live(config.thresholds?.windowMid) ?? 0.3,
+    windowHigh: live(config.thresholds?.windowHigh) ?? 0.5,
+    windowCritical: live(config.thresholds?.windowCritical) ?? 0.8,
+    economyTokenFloor: live(config.thresholds?.economyTokenFloor) ?? 50000,
+    economyWindowRatio: live(config.thresholds?.economyWindowRatio) ?? 0.3,
+    economyRoundFloor: live(config.thresholds?.economyRoundFloor) ?? 10,
+    messageCountProxy: live(config.thresholds?.messageCountProxy) ?? 800,
+    messageCountWindowRatio: live(config.thresholds?.messageCountWindowRatio) ?? 0.002,
   }
   const checks: ChecksConfig = {
     git: {
-      enabled: config.checks?.git?.enabled ?? true,
+      enabled: live(config.checks?.git?.enabled) ?? true,
       workspaceRoot: config.checks?.git?.workspaceRoot,
     },
     handoff: {
-      enabled: config.checks?.handoff?.enabled ?? true,
-      paths: config.checks?.handoff?.paths ?? [],
+      enabled: live(config.checks?.handoff?.enabled) ?? true,
+      paths: live(config.checks?.handoff?.paths) ?? [],
     },
-    sessionResume: { enabled: config.checks?.sessionResume?.enabled ?? true },
-    processes: { enabled: config.checks?.processes?.enabled ?? false },
-    knowledge: { enabled: config.checks?.knowledge?.enabled ?? true },
+    sessionResume: { enabled: live(config.checks?.sessionResume?.enabled) ?? true },
+    processes: { enabled: live(config.checks?.processes?.enabled) ?? false },
+    knowledge: { enabled: live(config.checks?.knowledge?.enabled) ?? true },
   }
-  const projection: ProjectionConfig = { enabled: config.projection?.enabled ?? true }
+  const projection: ProjectionConfig = { enabled: live(config.projection?.enabled) ?? true }
   const cost: CostConfig = {
-    cacheHitDiscount: config.cost?.cacheHitDiscount ?? 0.1,
-    inputPricePerM: config.cost?.inputPricePerM ?? 0.28,
-    priceSource: config.cost?.priceSource ?? 'auto',
-    priceUrl: config.cost?.priceUrl ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',
-    priceFallbackUrl: config.cost?.priceFallbackUrl ?? 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json',
-    priceRefreshHours: config.cost?.priceRefreshHours ?? 24,
+    cacheHitDiscount: live(config.cost?.cacheHitDiscount) ?? 0.1,
+    inputPricePerM: live(config.cost?.inputPricePerM) ?? 0.28,
+    priceSource: live(config.cost?.priceSource) ?? 'auto',
+    priceUrl: live(config.cost?.priceUrl) ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',
+    priceFallbackUrl: live(config.cost?.priceFallbackUrl) ?? 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json',
+    priceRefreshHours: live(config.cost?.priceRefreshHours) ?? 24,
   }
   return { thresholds, checks, projection, cost }
 }
