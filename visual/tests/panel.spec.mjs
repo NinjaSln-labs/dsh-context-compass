@@ -7,7 +7,7 @@
  */
 import { test, expect } from '@playwright/test'
 import { FIVE_TIER_ROWS, SIX_ROW_PAYLOAD, rpcPayload } from '../fixtures/overview.mjs'
-import { mockOverview, openOverview, setTheme, settle, gotoApp } from '../helpers.mjs'
+import { mockOverview, openOverview, setTheme, settle, gotoApp, pinHostFontSize } from '../helpers.mjs'
 
 test.beforeEach(async ({ page }) => {
   await gotoApp(page)
@@ -41,6 +41,7 @@ test('panel light: 四档矩阵 + 固定 5 行高度 + 行序', async ({ page })
 
 test('panel dark: 四档矩阵（暗色主题）', async ({ page }) => {
   await setTheme(page, 'dark')
+  await pinHostFontSize(page) // setTheme 走过设置页，截图前再钉一次字号基线
   await mockOverview(page, rpcPayload(FIVE_TIER_ROWS))
   await openOverview(page)
   await settle(page)
@@ -93,6 +94,18 @@ test('面板：文字放大后单元格不得折行', async ({ page }) => {
   for (const zoom of [1, 1.5]) {
     await page.evaluate((z) => { document.body.style.zoom = z === 1 ? '' : String(z) }, zoom)
     await settle(page)
+
+    // 列必须真的展开：所有格子左边缘相同时差值也会是 0，那是表格塌成一列，
+    // 不是对齐。先断言「有 7 个不同的 x」，再断言表头与行逐列对齐。
+    const xs = await page.evaluate(() => {
+      const left = (el) => [...el.children].map((c) => Math.round(c.getBoundingClientRect().left))
+      return {
+        head: left(document.querySelector('.sh-panel-head-row')),
+        body: left(document.querySelector('.sh-panel-row')),
+      }
+    })
+    expect(new Set(xs.body).size, `zoom=${zoom}：表格必须展开成多列（塌成一列时差值也会是 0）`).toBe(7)
+    expect(xs.head.map((v, i) => v - xs.body[i]), `zoom=${zoom}：表头与行必须逐列对齐`).toEqual([0, 0, 0, 0, 0, 0, 0])
 
     // 不允许出现「接近两倍行高」的单元格——那正是折行的特征。
     // 注意不能断言各格行高相等：严重度那格是带 padding/边框的 chip，本就更高。

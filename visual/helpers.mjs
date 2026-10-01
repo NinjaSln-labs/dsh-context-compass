@@ -30,6 +30,22 @@ export async function gotoApp(page) {
   await expect(page.locator('button:has-text("设置"), button:has-text("Settings")').first())
     .toBeVisible({ timeout: 20_000 })
   await page.waitForTimeout(400) // 主题在 shell 挂载后再落定
+  await pinHostFontSize(page)
+}
+
+/**
+ * 把宿主的字号设置钉到基线值（14px，即 `--dsh-content-font-size` 的默认值）。
+ *
+ * 本仓自 0.2.0 适配起全部字号/列宽都从宿主这个变量推导（见 styles.ts 的
+ * 「字号刻度」），它随 Settings → 外观 → Font size 变化。像素基线若跟着它走，
+ * 换台机器、换个用户设置就会全红——基线必须只反映**本仓的布局**，不反映别人
+ * 的排版偏好。缩放行为由 panel/badge 的字号适配用例单独验（那里改完即还原）。
+ */
+export async function pinHostFontSize(page, px = 14) {
+  await page.evaluate((v) => {
+    document.body.style.setProperty('--dsh-content-font-size', `${v}px`)
+  }, px)
+  await page.waitForTimeout(150)
 }
 
 /**
