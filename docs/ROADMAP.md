@@ -1,6 +1,6 @@
 # dsh-context-compass — Roadmap
 
-状态基准：**v0.12.2**（2026-09-10 发布，npm latest）。本文件是路线图的**唯一权威来源（单源）**；`.handoff/`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
+状态基准：**v0.13.0**（2026-10-01，dsh@0.2.0-rc.2 全面适配；BREAKING：peer 升 `^0.2.0-rc.2`）。本文件是路线图的**唯一权威来源（单源）**；`.handoff/`（本地私有未追踪，不入仓库）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 只记录 delta 并引用本文件，不复制路线内容。
 
 ## 已交付（到 v0.11.0）
 
@@ -122,3 +122,13 @@
 - 优先级/排期变化只改这里；`.handoff/`（本地私有未追踪）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 引用本文件、不复制路线内容
 - **peer 基线策略**：`peerDependencies` 声明"最低要求的服务版本"，保持宽松、不随 harness 每次升级而升。**2026-08-29 已升 `^0.1.1-rc.2`**（此前 `^0.1.0-rc.6` 有 semver prerelease 门控陷阱：`>=0.1.0-rc.6 <0.2.0` 的带 prerelease 比较符元组是 0.1.0，仅 rc.8 这类元组 0.1.0 的版本匹配；0.1.1 系列元组 0.1.1 **不匹配**——旧 range 连当前部署 0.1.1-rc.2 都声明不上）。`^0.1.1-rc.2` 覆盖 0.1.1-rc.2 + 未来 0.1.2 正式版（`<0.2.0`）；**0.1.2-alpha.1 尚未发布 npm（暂不可声明 `^0.1.2-*`），待发布且接入其独有 API 时再局部升**（参考：C1 接入 `@deepseek-ai/dsh-settings` 的局部升先例）
 - **升级体检基线（S1 依据）**：每次 harness 升级，对照 live 契约校验插件硬注入（commands / tools / sessionProjections / webServer）+ 全部 `ctx.get` 可选读取 + client slot（sidebar.footer.action / shell.overlay / conversation.session.header.utilities / conversation.chat.commandview / settings.plugin.item）是否仍存在、形状是否兼容。rc.8 校验通过（见 commit `5a00d11`/`04a4600` 前后；原文 `9b98c07` 为早期改写前坐标）；**0.1.5-rc.1 体检完成（0.12.2，全绿）**——当年在 0.1.2-alpha.1 记的两条「预判影响」实测结论：① `coldSnapshot` 签名确实 breaking（**已修，见 0.12.2**）② `conversation.chat.commandview` slot **未移除**（实测存在且本插件 seat active，该预判有误）。**教训**：预判影响必须落成实测项，否则会像 coldSnapshot 一样潜伏三个版本（fail-soft 路径无症状）
+
+### 0.13.0 dsh@0.2.0-rc.2 全面适配
+
+- **四处断点**——`@deepseek-ai/dsh-client-runtime` 整包已移除却留在 peer，宿主兼容性闸门直接拒启本插件（路由从未注册）；client 入口类型、`Context.slots` 声明方、ambient 随之重接
+- **两处静默失效**——`commands/execute` 三参化（两参被 facade 元数守卫抛错，徽章/点行发不出命令）；`ctx.sessions.open()` 删除 → `ctx.uiWorkspace.openSession`
+- **C1 重接**——`volatile()` 标注 + `settings.configure({auto:true})`；跨字段单调性改读时兜底；schemastery 抬到 `~3.18.4`
+- **C2 重接 + 重构**——底座换 `ctx.configForms`、落点 `plugins.item`(summary) + `plugins.bundle.config`(page)；渲染层换宿主设计系统，删净自绘 `.sh-cf-*`
+- **默认收口**——git 探测 / 会话续接 / 知识库联动 三项默认关
+- **排版**——字号随宿主 Font size 设置联动；面板列宽实测统一（对齐 + 不滚动 + 不截断）；浮层宽度按内容自适应
+- **门禁**——contract-check 判别改用 body 形状；测试桩按真实契约重写；visual 会话前置不再盲信过期 id

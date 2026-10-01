@@ -25,6 +25,18 @@
 
 - **0.11.5** — **罗盘一览 blank 口径对齐侧边栏真值（方案 A）**（2026-09-03，接手会话）：0.11.4 的 blank 用「标题 fold 无标题」代理判定，确认异步 + blankCache 60s TTL 过期 → 真空壳冷会话每帧闪现（实测侧边栏 9 行、罗盘首帧 10 行——0.11.4 的「7 会话对齐」实为稳态对齐，瞬态窗口未对齐）。本版改为消费宿主聚合层 `sessionController.list()` 每行自带的 `sessionListMetadata.blank` 投影真值（侧边栏渲染的就是这份列表）：挂载预热 `refreshBlankTruth` + 请求帧 SWR 刷新，冷 blank 行**首帧即裁剪**；真值缺席/抛错降级回标题代理路径。顺带修正 0.11.3 两处错误镜像：stray 会话保留显示（侧边栏「未分组」桶）、冷无 cwd 记录裁剪（宿主 list() 同款边界）。smoke +5（真值首帧裁剪 / live blank 不裁 / 真值失败降级 / stray 未分组 / 冷无 cwd）；本机测试按新 DoD 条目执行（file: 安装 + 重启 profile 实测首帧对齐）；DEVELOPMENT.md DoD 增补「本机测试」硬性条目（参照 dsh-subagent-router 纪律）。**注：0.11.5 因本版发现的返回形状 bug，方案 A 实际未生效——已被 0.11.6 接替**
 
+- **0.13.0** — **dsh@0.2.0-rc.2 全面适配**（2026-10-01，tag → `context-compass-v0.13.0`）：**BREAKING**：peer 全量升 `^0.2.0-rc.2`，不再兼容 dsh@<0.2.0-rc.2。
+
+  - **四处断点**：`@deepseek-ai/dsh-client-runtime` 整包在 0.2.0 已移除，却仍留在 peer 里 → 宿主兼容性闸门**直接把本插件连同其余 5 个一起拒启**，路由从未注册（`import` 阶段即失败）；client 入口类型改回 cordis 原生 `Context`，`Context.slots` 声明方改由 `dsh-client-ui-renderer` 提供；ambient 同步。
+  - **两处静默失效**（均被 `try/catch` 包着，编译通过、单测全绿、功能却是死的）：`commands/execute` 变三参 `(agentId, line, submittedAttachments, signal?)`，两参调用被客户端 facade 元数守卫抛错 → 徽章点击与面板点行发不出 `/compass`；`ctx.sessions.open()` 已删除（ISessions 注释：navigation belongs to view owners）→ 改走 `ctx.uiWorkspace.openSession`，并补进 `inject`。
+  - **C1 host 配置页重接**：宿主 `SettingsForms` 只暴露 schema 里标了 `.volatile()` 的字段，且只接受 volatile 路径。live 字段（阈值 8 / 检查项 6 / 投影 1 / 计费显示 2）标 `.volatile()`，计费源 4 项保持不标（本就声明「重启后生效」）；`installSection` → `settings.configure({ auto: true }, fiber)`；活源不再手工重绑定（volatile 单元每次 `get()` 取当前快照）；跨字段单调性因 validate 钩子消失而改为**读时兜底**。schemastery 下限抬到 `~3.18.4`（3.18.2 无 volatile 机制，装上即 import 失败）。
+  - **C2 配置卡重接 + 重构**：`settingsScope` 已移除 → 底座换 `ctx.configForms.get(entryId)`；`settings.plugin.item` 在 0.2.0 注册表里已不存在 → 列表行走 `plugins.item`(summary)、表单走 `plugins.bundle.config`(keyed by 包名)，两个详情页都供。渲染层整个换用宿主设计系统（`SettingsForm` / `SettingsValueField` / `Checkbox`），删掉自绘 `.sh-cf-*` 全部样式；卡内字段集 == schema volatile 集，由测试钉死。
+  - **默认配置收口**：`checks.git` / `checks.sessionResume` / `checks.knowledge` 三项改默认关（用户裁定：不该在没要求时探测宿主外部状态）；交接文档探测与投影单元维持默认开。
+  - **排版随宿主字号走**：全部字号/行高改从宿主的 `--dsh-content-font-delta` 推导（与宿主 markdown token 同一套），Settings → 外观 → Font size 一改本仓等比跟随。面板列宽改为**实测后统一写入 `--sh-cols`**（表头与所有行共用同一份模板 → 逐列对齐，又不滚动条、不截断；max-content 列各容器各量各的必然错位，subgrid 嵌套轨道不继承会塌列，固定 px 则大字号装不下）。浮层宽度按内容自适应，不再夹逼折行。
+  - **contract-check 判别重写**：0.2.0 起宿主对未注册路径回 405 空 body，旧的「404 = 未挂载」判据失效。改判「响应体是否带本插件 handler 自己的 JSON」（`invalid json` / `POST only` 两个字符串不会与宿主撞车），与状态码无关；每次先打随机对照路径取证；失败分支可经 `DSH_RPC_PATH` 端到端验证。
+  - **测试桩按真实契约重写**（同 0.12.2 那个 `cachedSnapshot` 桩的教训）：`execute` 桩复刻宿主元数守卫、导航桩断言 `uiWorkspace.openSession` 在位且 `sessions.open` 确实已移除。visual 会话前置改为**校验 + 轮询 + 重试**，不再盲信会过期的 session id。
+  - **验证**：门禁七步全绿（build/typecheck/smoke/mount/client-mount/contract/visual）；实机 contract-check 5/5、visual 8/8；读/写/活源三路均有实机证据（改阈值 → 落盘 profile patch → 单元活变）。
+
 - **0.11.4** — **罗盘一览对齐侧边栏 blank cut**（2026-09-03）：真空壳冷会话（仅 header、无任何消息 → 无标题事件）经后台 title fold 确认后从一览隐藏（首帧不预判、fill 落定后下一帧隐藏，5s 刷新自然对齐）；与侧边栏 `session.seq===0` 的 blank 语义一致，比 0.11.1 时代误伤的 title-null 判定精确（不误杀「有内容但首帧标题未填」的会话）。补 blank smoke 测试
 
 - **0.11.3** — **罗盘一览 workspace 过滤补进源码**（2026-09-03）：0.11.1 时代该过滤只手改在已安装 lib 上未进 src，CI 重建（0.11.2）时丢失，一览回到全部会话（17 个）；本版把「只显示有工作区归属的会话」写入 `src/overview.ts` 并重建。**澄清**：不镜像侧边栏的 blank 冷会话隐藏（那需逐会话 seq/投影读，且空会话显示为 no-data 行无碍）——见源码注释
