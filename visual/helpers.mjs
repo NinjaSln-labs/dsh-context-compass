@@ -33,34 +33,50 @@ export async function gotoApp(page) {
 }
 
 /**
- * 侧栏里「一个真实会话」的可见入口——两种侧栏形态都认：
- * - 扁平列表：`div.sessionRow`（「新建会话」占位除外）；
- * - 工作区分组树（0.1.5-rc.1 起默认形态）：会话折叠在 `div.projectRow` 工作区节点下，
- *   必须先展开某个工作区，其内的 `sessionRow` 才会渲染。
- * 徽章只为**已物料化**的会话渲染，所以这一步是 badge spec 的前置。
+ * 打开一个真会话，让 header 徽章有渲染时机。
+ *
+ * 为什么不用点侧栏（0.2.0-rc.2 实测）：
+ *   - 侧栏工作区树能展开、会话搜索框在位，但 278 个已物料化会话一个都不显形，
+ *     只剩 New Session 占位；点它、点顶部大按钮、试快捷键，UI 全无反应。
+ *   - 宿主 `ctx.uiWorkspace.openSession(id)` 被正确调用（探针实证）也毫无反应。
+ *   这些是宿主侧现象，本仓不自造绕行。
+ *
+ * 走的是宿主自己的会话契约键 `dsh.sessions.current`（客户端把当前会话记在
+ * localStorage，见 dsh-client-ui-workspace 的 view store）。会话 id 由
+ * `dsh --profile headless` 建出来——它既能接管已有会话也能新建，是当前唯一
+ * 能在本 harness 产出可用会话的路径。
+ *
+ * 会话 id 来自 `DSH_VISUAL_SESSION_ID`；没给就现建一个（会跑一次 LLM 调用，
+ * 故在套件注释与 README 里写明这处有代价，不要在 CI 里裸跑）。
  */
-async function revealSessionEntry(page) {
-  const realRows = () => page.locator('div[class*="sessionRow"]').filter({ hasNotText: /新会话|New Session/ })
-  if (await realRows().count() > 0) return realRows().first()
-  const projects = page.locator('div[class*="projectRow"]')
-  const n = await projects.count()
-  for (let i = 0; i < n; i++) {
-    await projects.nth(i).click()
-    await page.waitForTimeout(400)
-    if (await realRows().count() > 0) return realRows().first()
-  }
-  return realRows().first() // 交给调用方的 expect 报清晰的「找不到会话」错误
-}
-
-/** Wait for the app shell, then open a real (non-new) session. */
 export async function openSession(page) {
   await gotoApp(page)
-  // 已经有会话物料化（徽章已渲染）就不用再点。
   if (await page.locator('.sh-badge').count() > 0) return
-  const row = await revealSessionEntry(page)
-  await expect(row).toBeVisible({ timeout: 20_000 })
-  await row.click()
+
+  const id = await resolveSessionId(page)
+  await page.evaluate((sessionId) => {
+    localStorage.setItem('dsh.sessions.current', JSON.stringify({ sessionId }))
+  }, id)
+  await page.reload({ waitUntil: 'domcontentloaded' })
   await expect(page.locator('.sh-badge')).toBeVisible({ timeout: 20_000 })
+}
+
+/** 解析要打开的会话 id：环境变量优先，否则用 headless profile 现建一个。 */
+async function resolveSessionId(page) {
+  if (process.env.DSH_VISUAL_SESSION_ID !== undefined && process.env.DSH_VISUAL_SESSION_ID !== '') {
+    return process.env.DSH_VISUAL_SESSION_ID
+  }
+  const { execFileSync } = await import('node:child_process')
+  const out = execFileSync('dsh', ['--profile', 'headless', '--json', '只回复两个字：收到'], {
+    encoding: 'utf-8', timeout: 300_000, maxBuffer: 8 * 1024 * 1024,
+  })
+  for (const line of out.split('\n')) {
+    if (line.trim() === '') continue
+    let evt
+    try { evt = JSON.parse(line) } catch { continue }
+    if (evt.type === 'session' && typeof evt.sessionId === 'string') return evt.sessionId
+  }
+  throw new Error('dsh --profile headless 未返回 sessionId —— 无法准备徽章验收所需的会话')
 }
 
 /** Idempotent theme switch through Settings → 外观（浅色/深色 | Light/Dark）. */

@@ -7,6 +7,10 @@
  * 只读约定：本套件不触发任何真实 /compass（那会往会话日志写卡片，
  * 污染用户会话）——卡片功能（折叠/时间标签/失败态）由 smoke 与
  * client-mount 的单测覆盖，视觉上由 panel 矩阵（RPC mock，只读）承担。
+ *
+ * 会话前置：见 helpers.mjs 的 openSession——宿主侧栏在本 harness 显不出
+ * 已物料化会话，改走 `dsh.sessions.current` 契约键；会话 id 由
+ * DSH_VISUAL_SESSION_ID 给，没给会现建一个（有 LLM 调用代价）。
  */
 import { test, expect } from '@playwright/test'
 import { openSession } from '../helpers.mjs'
