@@ -17,11 +17,25 @@
  *   npm run build && node scripts/client-mount.mjs
  */
 import assert from 'node:assert/strict'
-import { createRequire } from 'node:module'
+import { createRequire, registerHooks } from 'node:module'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import { makeCommandsExecute, resetCommandCalls, commandCalls } from './tests/helpers.mjs'
 
 const require = createRequire(import.meta.url)
+
+// 宿主的设置组件是浏览器件（import CSS module），Node 里 import 会炸。把它换成本仓
+// 的最小桩（scripts/tests/stub-primitives.mjs）：换掉的只是宿主的渲染与样式，我们
+// 卡片自己的组装、字段投影与动作接线仍是真的在跑。
+const STUB_PRIMITIVES = pathToFileURL(new URL('./tests/stub-primitives.mjs', import.meta.url).pathname).href
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === '@deepseek-ai/dsh-client-ui-primitives') {
+      return { url: STUB_PRIMITIVES, shortCircuit: true }
+    }
+    return nextResolve(specifier, context)
+  },
+})
 
 // 1) Capture the __ModuleLoader__ registration the bundle performs on import.
 let handoff = null
@@ -227,7 +241,7 @@ try {
 }
 
 // 4) apply ran: the badge + two overview seats + the /compass card seat.
-assert.equal(seats.length, 5, 'apply must register exactly five slot seats')
+assert.equal(seats.length, 6, 'apply must register exactly six slot seats（列表行 + bundle 配置 + 徽章 + 一览入口 + 面板 + 命令卡）')
 const byName = Object.fromEntries(seats.map(s => [s.name, s]))
 assert.ok(byName['conversation.session.header.utilities'], 'badge seat registered')
 assert.ok(byName['sidebar.footer.action'], 'overview opener seat registered')
@@ -249,10 +263,17 @@ assert.equal(overlayReg[0].name, 'shell.overlay')
 const cardReg = byName['conversation.chat.commandview'].fn()
 assert.equal(cardReg[0].name, 'conversation.chat.commandview')
 assert.equal(cardReg[0].key, 'compass')
-const settingsReg = byName['plugins.item'].fn()
-assert.equal(settingsReg[0].name, 'plugins.item')
-assert.equal(settingsReg[0].id, 'context-compass', 'id is the settings namespace — 与宿主 whileServed 的键一致')
-assert.equal(settingsReg[0].order, 90)
+// 列表行：plugins.item 的 summary 视图（账本条目）
+const itemReg = byName['plugins.item'].fn()
+assert.equal(itemReg[0].name, 'plugins.item')
+assert.equal(itemReg[0].id, 'context-compass', '列表行 id 是账本键')
+assert.equal(itemReg[0].order, 90)
+assert.equal(itemReg[0].label, '上下文罗盘配置', '账本显示名不能缺（缺了只出现一行空白条目）')
+// 表单：bundle 详情页走 plugins.bundle.config，keyed by **包名**
+const bundleGen = byName['plugins.bundle.config'].fn()
+const bundleReg = bundleGen.next().value
+assert.equal(bundleReg[0].name, 'plugins.bundle.config')
+assert.equal(bundleReg[0].key, 'dsh-context-compass', 'key 是包名——bundle 详情页按 entryKey=pkg.name 过滤')
 console.log('  ok  apply ran: badge + overview opener + overview panel + /compass card seats + settings card')
 
 // 4b) commands.execute 桩的契约保真度（0.2.0-rc.2 破口回归）。
@@ -326,11 +347,13 @@ console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compas
     assert.ok(bareByName[seat], `缺 configForms 时 ${seat} 仍须注册`)
   }
   assert.equal(bareByName['plugins.item'], undefined, '缺 configForms 时只跳过 C2 配置卡')
+  assert.equal(bareByName['plugins.bundle.config'], undefined, '缺 configForms 时不注册 bundle 配置表单')
   console.log('  ok  no configForms: four seats survive, C2 card skipped')
 }
 
 // 6) C2 card-form controller unit tests (fake scope drives the form).
 const { CompassCardForm } = await import('../lib/client/settings-card/card-form.js')
+const { controlKindFor } = await import('../lib/client/settings-card/card.js')
 const { FIELDS: CF_FIELDS } = await import('../lib/client/settings-card/fields.js')
 
 function makeScope(initial) {
@@ -683,48 +706,43 @@ function mergeUserInto(target, source) {
 // 6q) controlFor —— 渲染的唯一来源（0.12.1：FieldControl 直接消费本函数，断言即渲染契约）
 {
   const { controlFor, saveBlocked, discardBlocked } = await import('../lib/client/settings-card/card.js')
+  // 0.2.0 重构后渲染层交给宿主组件，本仓只保留「字段种类 → 用哪个宿主控件」这一个
+  // 决定（controlKindFor）。旧断言针对的是自绘控件的 inputMode/checkbox 形状，
+  // 那些标记已随 .sh-cf-* 样式一起删除，改测这份映射本身。
   const spec = key => CF_FIELDS.find(f => f.path.join('.') === key)
-  const field = { text: '', checked: false, invalid: false }
+  assert.equal(controlKindFor(spec('checks.handoff.enabled')), 'checkbox', 'boolean → Checkbox（自带可见标签）')
+  assert.equal(controlKindFor(spec('thresholds.windowMid')), 'value', 'number → SettingsValueField')
+  assert.equal(controlKindFor(spec('cost.priceUrl')), 'value', 'string → SettingsValueField')
+  for (const f of CF_FIELDS) {
+    assert.ok(['checkbox', 'value'].includes(controlKindFor(f)), `每种字段都有宿主控件归属：${f.path.join('.')}`)
+  }
+  const boxes = CF_FIELDS.filter(f => controlKindFor(f) === 'checkbox')
+  assert.equal(boxes.length, 6, '6 个布尔项走 Checkbox，其余 12 项走 SettingsValueField')
+  console.log('  ok  card: 字段种类 → 宿主控件映射（渲染单一来源）')
 
-  const numberSpec = spec('thresholds.windowMid')
-  assert.ok(numberSpec, 'controlFor: number field exists')
-  assert.deepEqual(
-    controlFor(numberSpec, { ...field, text: '0.5' }),
-    { type: 'text', inputMode: 'decimal', text: '0.5' },
-    'controlFor: number → text + inputMode decimal（小数点可输入）',
-  )
-
-  const boolSpec = spec('checks.handoff.enabled')
-  assert.ok(boolSpec, 'controlFor: boolean field exists')
-  assert.deepEqual(
-    controlFor(boolSpec, { ...field, checked: true }),
-    { type: 'checkbox', checked: true },
-    'controlFor: boolean → checkbox with checked',
-  )
-
-  const selectSpec = spec('cost.priceSource')
-  assert.ok(selectSpec, 'controlFor: select field exists')
-  const selectControl = controlFor(selectSpec, field)
-  assert.equal(selectControl.type, 'select', 'controlFor: select → select')
-  assert.equal(selectControl.options, selectSpec.options, 'controlFor: select 透传 spec 选项（同源）')
-
-  const stringSpec = spec('checks.git.workspaceRoot')
-  assert.ok(stringSpec, 'controlFor: string field exists')
-  assert.deepEqual(
-    controlFor(stringSpec, { ...field, text: 'x' }),
-    { type: 'text', inputMode: undefined, text: 'x' },
-    'controlFor: string → text 不带 inputMode',
-  )
-
-  assert.equal(saveBlocked({ dirty: true, invalid: false, saving: false }), false, 'saveBlocked: 干净可存')
-  assert.equal(saveBlocked({ dirty: true, invalid: true, saving: false }), true, 'saveBlocked: 非法禁存')
-  assert.equal(saveBlocked({ dirty: false, invalid: false, saving: false }), true, 'saveBlocked: 无改动禁存')
-  assert.equal(saveBlocked({ dirty: true, invalid: false, saving: true }), true, 'saveBlocked: 保存中禁存')
-
-  // 回归：0.12.1 前 discard 复用 saveBlocked，非法草稿时用户被锁死无法放弃
-  assert.equal(discardBlocked({ saving: false }), false, 'discardBlocked: 非法草稿仍可放弃（逃生通道）')
-  assert.equal(discardBlocked({ saving: true }), true, 'discardBlocked: 保存中禁放弃')
-  console.log('  ok  card: controlFor / saveBlocked / discardBlocked（渲染单一来源 + 放弃通道）')
+  // 卡里画的字段集必须与 Config schema 的 `.volatile()` 标注**逐条一致**。
+  // 两张清单各写各的必然漂移：多画一个非 volatile 字段，用户改完点保存只会看到
+  // 「保存未生效」（SettingsForms.write 拒非 volatile 路径），而且控件是空的。
+  {
+    const { Config } = await import('../lib/config.js')
+    const { FIELDS } = await import('../lib/client/settings-card/fields.js')
+    const { CARD_FIELDS } = await import('../lib/client/settings-card/index.js')
+    const schemaVolatile = []
+    const walk = (node, prefix) => {
+      if (node.meta?.volatile) { schemaVolatile.push(prefix.join('.')); return }
+      if (node.type === 'object') {
+        for (const [k, child] of Object.entries(node.dict ?? {})) walk(child, [...prefix, k])
+      }
+    }
+    walk(Config, [])
+    const cardKeys = CARD_FIELDS.map(f => f.path.join('.'))
+    assert.deepEqual(
+      [...cardKeys].sort(), [...schemaVolatile].sort(),
+      `卡内字段集必须等于 schema 的 volatile 集（卡 ${cardKeys.length} / schema ${schemaVolatile.length}）`,
+    )
+    assert.equal(FIELDS.length - CARD_FIELDS.length, 4, '4 个计费源字段留在配置文件编辑（重启生效）')
+    console.log(`  ok  卡内字段集 == schema volatile 集（${cardKeys.length} 项），4 项重启字段不在卡内`)
+  }
 
 // 6z) 落地判定以**回读**为准，不以 mutate 的返回值为准。
 //     宿主的 boolean 只说「这次写入被受理」，真正的判据是写后回读里该 path

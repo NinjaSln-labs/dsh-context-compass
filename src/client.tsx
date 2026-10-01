@@ -54,7 +54,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'plugins.item': {
       kind: 'list'
       scope: 'root'
-      owner: { children?: never }
+      owner: { view: 'summary' | 'page' }
+    }
+    /** bundle 详情页上的配置表单，keyed by **包名**。 */
+    'plugins.bundle.config': {
+      kind: 'keyed'
+      scope: 'root'
+      owner: { view: 'summary' | 'page' }
     }
   }
 }
@@ -170,18 +176,35 @@ export function apply(ctx: Context): void {
   // `whileServed` 是宿主的门控：命名空间没被提供就不注册（部署里没组合到宿主
   // 插件时，页面连痕迹都不留），这正是现行 bash/subagent/web-search 的写法。
   if (configForms !== undefined && compassCard !== undefined) {
-    ctx.effect(() => configForms.whileServed(['context-compass'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register(
-      {
-        name: 'plugins.item',
-        id: 'context-compass',
-        order: 90,
-        // label 是账本的显示名：`plugins.item` 在 plugin-manager 里被投影成
-        // `{ id, label }` 列表，label 缺失就只出现一行空白条目（宿主 shell /
-        // subagent / web-search 全部都带）。
-        label: '上下文罗盘配置',
-      } as never,
-      () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
-    ) as never)))
+    ctx.effect(() => configForms.whileServed(['context-compass'], () => {
+      // 两个落点，职责不同（见 dsh-client-ui-plugin-manager 的 renderSlot 调用）：
+      //   plugins.item         —— 插件**列表**里的那一行（view: 'summary'）。id 是
+      //                           账本键，插件管理页按它投影成 {id,label}。
+      //   plugins.bundle.config —— **bundle 详情页**上的表单，keyed by **包名**。
+      // 0.2.0 之前只注册了前者且无视 view，于是一整张表单被塞进列表行——那正是
+      // 「不符合统一界面设计」的直接来源。官方条目的详情页也走 plugins.item 的
+      // view:'page'，但本插件是 bundle（file: 安装），那条路根本不会命中。
+      const renderCard = (view: 'summary' | 'page') => (
+        <SettingsCard view={view} store={compassCard.store} actions={compassCard.actions} />
+      )
+      const itemSeat = ctx.slots.inject('plugins.item', () => ctx.slots.register(
+        {
+          name: 'plugins.item',
+          id: 'context-compass',
+          order: 90,
+          // label 是账本的显示名：缺了只出现一行空白条目（宿主三个自带插件都带）。
+          label: '上下文罗盘配置',
+        } as never,
+        () => renderCard('summary'),
+      ) as never)
+      const bundleSeat = ctx.slots.inject('plugins.bundle.config', function* () {
+        yield ctx.slots.register(
+          { name: 'plugins.bundle.config', key: 'dsh-context-compass' } as never,
+          () => renderCard('page'),
+        ) as never
+      })
+      return () => { itemSeat?.(); bundleSeat?.() }
+    }))
     ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
   } else {
     console.warn(

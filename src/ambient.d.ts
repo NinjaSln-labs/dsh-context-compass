@@ -17,6 +17,7 @@ import '@deepseek-ai/dsh-api-remotes'
 import '@deepseek-ai/dsh-client-ui-renderer/client'
 import '@deepseek-ai/dsh-client-ui-chat/client'
 import '@deepseek-ai/dsh-client-ui-conversation'
+import '@deepseek-ai/dsh-client-ui-primitives'
 import '@deepseek-ai/dsh-client-ui-settings/client'
 import '@deepseek-ai/dsh-commands'
 
