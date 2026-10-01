@@ -85,12 +85,37 @@ function postRaw(path, raw) {
   })
 }
 
+/** GET 一个路径（只读；用于佐证路由存在，不带 body）。 */
+function getRaw(path) {
+  return new Promise((resolve) => {
+    const req = request(
+      {
+        hostname: BASE_URL.hostname,
+        port: BASE_URL.port,
+        path,
+        method: 'GET',
+        headers: authCookie ? { cookie: authCookie } : {},
+      },
+      (res) => {
+        let data = ''
+        res.on('data', (c) => (data += c))
+        res.on('end', () => resolve({ status: res.statusCode, body: data }))
+      },
+    )
+    req.on('error', (e) => resolve({ error: e }))
+    req.end()
+  })
+}
+
 /** POST 一段 JSON body。 */
 function postJson(path, payload) {
   return postRaw(path, JSON.stringify(payload))
 }
 
-const RPC = '/context-compass-rpc'
+// 路径可覆盖：不是为了改产物，而是为了让「路由不在」这条**失败分支**可被
+// 端到端验证——否则它只是一段没人跑过的报错文案，坏了也没人知道。
+//   DSH_RPC_PATH=/not-a-real-route node scripts/contract-check.mjs
+const RPC = process.env.DSH_RPC_PATH || '/context-compass-rpc'
 let failed = 0
 
 function pass(name, detail) { console.log(`✅ ${name}${detail ? ` — ${detail}` : ''}`) }
@@ -109,28 +134,59 @@ async function main() {
   }
   pass('入口鉴权', 'token → dsh-auth-* cookie 交换成功')
 
-  // 1) 连通性 + 路由存在性：POST 非法 JSON。
+  // 1) 路由存在性。
+  //
+  // 0.2.0-rc.2 起**状态码已不能判别**：宿主对未注册路径也回 405（空 body），
+  // 旧的「404 = 未挂载」判据直接失效。真正的判别依据是**响应体是否带我们
+  // handler 自己的 JSON**——实测（已挂载态）：
+  //
+  //              POST                         GET
+  //   我们的路由  400 {"error":"invalid json"}  405 {"error":"POST only"}
+  //   不存在的路径 405 （空 body）              404 （空 body）
+  //
+  // 「POST only」是本插件 handler 自己的字符串，不可能与宿主响应撞车；而空 body
+  // 是宿主的「路径不存在」。所以判据 = body 形状，与状态码无关，宿主改状态码也
+  // 不会失效。先打一条随机对照路径，把「未注册」在本宿主上的实际长相记录下来，
+  // 失败时报错才能直接告诉人该去看什么。
   const probe = await postRaw(RPC, '{ bad json')
   if (probe.error || probe.status === undefined) {
     console.log(`⚠️  harness 未运行（${probe.error?.code ?? 'connection failed'}）——跳过契约检查（exit 2，非插件问题）`)
     process.exit(2)
   }
-  if (probe.status === 404) {
-    fail('插件 RPC 路由存在', `/${RPC} 返回 404 —— 插件未挂载或 webServer 注入后未能注册路由（升级 API 漂移？）`)
-    console.log('')
-    process.exit(1)
+  const ours = (r) => {
+    if (r.body === undefined || r.body.trim() === '') return false
+    try { return typeof JSON.parse(r.body)?.ok === 'boolean' } catch { return false }
   }
-  if (probe.status === 401 || probe.status === 405) {
-    fail('插件 RPC 路由存在', `POST → ${probe.status} —— 0.2.0-rc.2 下宿主对未注册路径也回 405（非 404），${probe.status === 405 ? '该状态码已不能区分「插件未挂载」与「路径不存在」，需查 dsh 启动日志确认插件是否被 peer 兼容性闸门拒绝' : '鉴权未通过'}`)
+  const controlPath = `${RPC}-control-${process.pid}`
+  const control = await postRaw(controlPath, '{ bad json')
+  if (ours(control)) {
+    // 对照路径居然也返回了 JSON —— 说明宿主在未知路径上也开始回 JSON 形状，
+    // 此时 body 判据不再自洽（无法区分「我们的」与「宿主的」），必须当场说清，
+    // 不能给出误导性的通过/失败。对照路径**应当**没有 JSON body。
+    console.log(`⚠️  对照路径 ${controlPath} 也返回了 JSON（${control.status} ${control.body.slice(0, 80)}）`)
+    console.log('    宿主在未注册路径上的响应形状已变，body 判据不再自洽——判别器需要重新取证。')
+    process.exit(2)
+  }
+  if (!ours(probe)) {
+    fail('插件 RPC 路由存在', `POST → ${probe.status} ${JSON.stringify(probe.body.slice(0, 80))}（无本插件 JSON 特征）`)
+    console.log(`    对照：未注册路径在本宿主上是 ${control.status} 空 body。`)
+    console.log('    优先查两处：① dsh 启动日志里本插件是否被 peer 兼容性闸门拒启；')
+    console.log('    ② webServer 注入后 register() 是否真的注册了路由。')
     console.log('')
     process.exit(1)
   }
   if (probe.status === 400 && probe.body.includes('invalid json')) {
-    pass('插件 RPC 路由存在', 'POST 非法 JSON → 400 "invalid json"（路由是插件的 handler）')
-  } else if (probe.status === 403) {
-    fail('loopback 可达', `返回 403 loopback only —— 本脚本非 loopback 访问？`)
+    pass('插件 RPC 路由存在', 'POST 非法 JSON → 400 "invalid json"（路由是插件的 handler；判据为 body 形状，非状态码）')
   } else {
-    fail('插件 RPC 路由存在', `POST 非法 JSON → ${probe.status} ${probe.body.slice(0, 60)}（期望 400 invalid json）`)
+    fail('插件 RPC 路由存在', `路由在（body 是本插件的 JSON），但非法 JSON 未被拒：${probe.status} ${probe.body.slice(0, 80)}`)
+  }
+  // 1b) 第二个独立信号：GET 应命中同一个 handler 并回它自己的 'POST only'。
+  //     两个信号都指向 handler，才算「路由确实装在宿主上」。
+  const getProbe = await getRaw(RPC)
+  if (getProbe.status === 405 && getProbe.body.includes('POST only')) {
+    pass('路由方法守卫', 'GET → 405 "POST only"（同一 handler，独立佐证）')
+  } else {
+    fail('路由方法守卫', `GET → ${getProbe.status} ${getProbe.body.slice(0, 60)}（期望 405 "POST only"）`)
   }
 
   if (failed) { console.log(''); process.exit(1) }
