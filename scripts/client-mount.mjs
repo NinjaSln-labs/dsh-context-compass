@@ -386,6 +386,8 @@ function makeScope(initial) {
       }
       if (state.user) mergeUser(state.value, state.user)
       for (const l of [...listeners]) l()
+      // 0.2.0-rc.2 契约：mutate 回 Promise<boolean>（宿主是否受理），不是 void。
+      return true
     },
   }
   return api
@@ -723,6 +725,30 @@ function mergeUserInto(target, source) {
   assert.equal(discardBlocked({ saving: false }), false, 'discardBlocked: 非法草稿仍可放弃（逃生通道）')
   assert.equal(discardBlocked({ saving: true }), true, 'discardBlocked: 保存中禁放弃')
   console.log('  ok  card: controlFor / saveBlocked / discardBlocked（渲染单一来源 + 放弃通道）')
+
+// 6z) 落地判定以**回读**为准，不以 mutate 的返回值为准。
+//     宿主的 boolean 只说「这次写入被受理」，真正的判据是写后回读里该 path
+//     确实出现在 user 层——传输成功但字段没落下（被 schema 裁掉、命名空间换了）
+//     时，返回值仍可能是 true。反过来回读能兜住所有假成功。
+{
+  const s2 = makeScope(structuredClone(CF_DEFAULT))
+  s2.state.user = undefined
+  s2.mutate = async () => false // 假装宿主拒收，但把值写进了 user 层
+  const orig = s2.getSnapshot
+  let calls = 0
+  s2.getSnapshot = () => {
+    calls++
+    const snap = orig()
+    return calls === 1 ? snap : { ...snap, user: { thresholds: { windowHigh: 0.4 } } }
+  }
+  const form2 = new CompassCardForm(s2, [CF_FIELDS[1]])
+  const act2 = form2.actions()
+  await act2.editText('thresholds.windowHigh', '0.4')
+  await form2.save()
+  assert.equal(form2.shell().failed, false, 'mutate 回 false 但回读见值 → 判为已落地（回读是权威）')
+  form2.dispose()
+  console.log('  ok  mutate 返回值不参与落地判定：写后回读说了算')
+}
 }
 
 console.log('\nclient mount smoke passed')
