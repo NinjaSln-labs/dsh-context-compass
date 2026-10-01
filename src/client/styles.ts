@@ -96,7 +96,10 @@ width:max-content;min-width:280px;max-width:min(520px,calc(100vw - 24px));backgr
 .sh-scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--dsw-alias-bg-base) 62%,transparent);display:flex;align-items:center;justify-content:center;padding:32px;pointer-events:auto;z-index:60;animation:sh-fade-in .15s ease-out}
 @keyframes sh-fade-in{from{opacity:0}to{opacity:1}}
 @media (prefers-reduced-motion: reduce){.sh-scrim{animation:none}}
-.sh-panel{width:min(620px,100%);max-height:min(76vh,720px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden}
+/* 面板宽度跟随内容：表格的自然宽度由列模板（随字号缩放）决定，面板跟着它长，
+   就不需要横向滚动条。min-width 保住紧凑场景的原有观感，max-width:100% 兜住
+   视口；只有真的比视口还宽时才截断（单元格 ellipsis），仍不出现滚动条。 */
+.sh-panel{width:max-content;min-width:min(620px,100%);max-width:100%;max-height:min(76vh,720px);display:flex;flex-direction:column;background:var(--dsw-alias-bg-base);border:1px solid var(--dsw-alias-border-l2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.3);overflow:hidden}
 .sh-panel-head{display:flex;align-items:baseline;gap:10px;padding:14px 16px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
 .sh-panel-title{font-size:var(--sh-fs-lg);font-weight:600;color:var(--dsw-alias-label-primary)}
 .sh-panel-sub{font-size:var(--sh-fs-xs);color:var(--dsw-alias-label-tertiary);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -122,10 +125,13 @@ width:max-content;min-width:280px;max-width:min(520px,calc(100vw - 24px));backgr
    元素按各自字号解析：表头 11px、行 12px，同一条 5em 就是 55px vs 60px，
    逐列累积成肉眼可见的错位。
    单元格不折行（white-space:nowrap），超宽时由 .sh-panel-scroll 横向滚动兜底。 */
-.sh-panel-scroll{overflow-x:auto;overscroll-behavior-x:contain;--sh-u:calc(13px + var(--sh-d))}
-.sh-grid-cols{grid-template-columns:calc(5*var(--sh-u)) calc(3*var(--sh-u)) calc(2.9*var(--sh-u)) calc(3*var(--sh-u)) calc(3.4*var(--sh-u)) calc(4.3*var(--sh-u)) calc(3.4*var(--sh-u));justify-content:start}
+.sh-panel-scroll{overflow:hidden;--sh-u:calc(13px + var(--sh-d))}
+/* 列模板由 JS 实测写入 --sh-cols（每列最宽格子的宽度，见 overview.tsx 的列宽
+   实测 effect）：表头与所有行共用同一份，所以天然逐列对齐；宽度按实际内容给，
+   既不用滚动条也不用 ellipsis。--sh-u 只是首次渲染前的兜底（量完即被覆盖）。 */
+.sh-grid-cols{grid-template-columns:var(--sh-cols,calc(6.6*var(--sh-u)) calc(3*var(--sh-u)) calc(2.9*var(--sh-u)) calc(3*var(--sh-u)) calc(3.4*var(--sh-u)) calc(4.3*var(--sh-u)) calc(3.4*var(--sh-u)));justify-content:start}
 .sh-grid-cols > *{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sh-panel-head-row{display:grid;min-width:max-content;gap:14px;align-items:center;box-sizing:border-box;width:100%;padding:9px 16px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:var(--sh-fs-xxs);font-weight:500;color:var(--dsw-alias-label-tertiary);letter-spacing:.03em;font-variant-numeric:tabular-nums}
+.sh-panel-head-row{display:grid;gap:14px;align-items:center;box-sizing:border-box;width:100%;padding:9px 16px 8px;border-bottom:1px solid var(--dsw-alias-border-l1);font-size:var(--sh-fs-xxs);font-weight:500;color:var(--dsw-alias-label-tertiary);letter-spacing:.03em;font-variant-numeric:tabular-nums}
 .sh-col-head{border:none;background:transparent;color:inherit;font:inherit;padding:0;cursor:pointer;text-align:left;border-radius:4px;display:inline-flex;align-items:center;gap:3px}
 .sh-panel-head-row .sh-row-num.sh-col-head{justify-content:flex-end;width:100%}
 .sh-col-head:hover{color:var(--dsw-alias-label-primary)}

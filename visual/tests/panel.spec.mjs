@@ -105,6 +105,18 @@ test('面板：文字放大后单元格不得折行', async ({ page }) => {
       }
     })
     expect(new Set(xs.body).size, `zoom=${zoom}：表格必须展开成多列（塌成一列时差值也会是 0）`).toBe(7)
+    // 不允许出现横向滚动条：面板宽度应跟随内容，列被截断（ellipsis）也算不合格——
+    // 用户要的是「自适应全展示宽度」，不是「能滚过去看」。
+    const fit = await page.evaluate(() => {
+      const sc = document.querySelector('.sh-panel-scroll')
+      return {
+        scrolled: sc.scrollWidth > sc.clientWidth + 1,
+        clipped: [...document.querySelectorAll('.sh-panel-row')]
+          .some(r => [...r.children].some(c => c.scrollWidth > c.clientWidth + 1)),
+      }
+    })
+    expect(fit.scrolled, `zoom=${zoom}：不得出现横向滚动条`).toBe(false)
+    expect(fit.clipped, `zoom=${zoom}：列内容不得被截断`).toBe(false)
     expect(xs.head.map((v, i) => v - xs.body[i]), `zoom=${zoom}：表头与行必须逐列对齐`).toEqual([0, 0, 0, 0, 0, 0, 0])
 
     // 不允许出现「接近两倍行高」的单元格——那正是折行的特征。

@@ -177,6 +177,25 @@ export function OverviewBody(props: {
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const closeRef = React.useRef<HTMLButtonElement | null>(null)
   const listRef = React.useRef<HTMLDivElement | null>(null)
+  const scrollRef = React.useRef<HTMLDivElement | null>(null)
+  // 列宽实测：表头行与每条数据行是**各自独立的 grid 容器**，auto/max-content 列
+  // 在每个容器里各量各的，天然对不齐；写成固定 px 又装不下大字号下的内容（要
+  // ellipsis）或在窄视口溢出（要滚动条）。故在渲染后量一次「每列最宽的那个格子」，
+  // 把结果写进 --sh-cols，各行共用同一份模板：对齐与全展示同时成立。
+  React.useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (scroll === null) return
+    const measure = (el: Element | null): number[] =>
+      el === null ? [] : Array.from(el.children).map((c: Element) => Math.ceil(c.scrollWidth))
+    const head = scroll.querySelector('.sh-panel-head-row')
+    const columns = measure(head)
+    if (columns.length === 0) return
+    for (const row of Array.from(scroll.querySelectorAll('.sh-panel-row'))) {
+      const w = measure(row)
+      for (let i = 0; i < columns.length && i < w.length; i++) columns[i] = Math.max(columns[i], w[i])
+    }
+    scroll.style.setProperty('--sh-cols', columns.map((w: number) => `${Math.max(w, 24)}px`).join(' '))
+  }, [rows, sortMode, page])
   // The refresh interval's load() closure must see the current sort mode.
   const sortModeRef = React.useRef<SortMode>(sortMode)
   sortModeRef.current = sortMode
@@ -307,7 +326,7 @@ export function OverviewBody(props: {
         </div>
         {/* 表头与数据行必须共用同一个横向滚动容器，否则列宽超过面板宽度时两者
             会各自滚动、对不齐。列定义在 .sh-grid-cols（表头与行都挂它）。 */}
-        <div className="sh-panel-scroll">
+        <div className="sh-panel-scroll" ref={scrollRef}>
         <div className="sh-panel-head-row sh-grid-cols" role="row">
           <button type="button" className={`sh-col-head${sortMode === 'severity' ? ' sh-sort-active' : ''}`} onClick={() => changeSort('severity')} aria-label="按健康状态排序">健康{sortMode === 'severity' ? '↓' : ''}</button>
           <span title="运行中=智能体正在处理回回合；已加载=内存驻留待命；冷却=仅持久化">状态</span>
