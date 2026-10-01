@@ -178,12 +178,13 @@ export function apply(ctx: Context): void {
   if (configForms !== undefined && compassCard !== undefined) {
     ctx.effect(() => configForms.whileServed(['context-compass'], () => {
       // 两个落点，职责不同（见 dsh-client-ui-plugin-manager 的 renderSlot 调用）：
-      //   plugins.item         —— 插件**列表**里的那一行（view: 'summary'）。id 是
-      //                           账本键，插件管理页按它投影成 {id,label}。
+      //   plugins.item         —— 列表行(账本条目) + **账本条目详情页**的表单。
+      //                           视图由宿主传（summary / page），必须透传。
       //   plugins.bundle.config —— **bundle 详情页**上的表单，keyed by **包名**。
+      // 两个详情页都会问到「表单在哪」：从列表行点进来走前者，直接从已安装列表
+      // 进 bundle 页走后者。缺一个，那个页面就只剩标题和一句摘要、下面全空。
       // 0.2.0 之前只注册了前者且无视 view，于是一整张表单被塞进列表行——那正是
-      // 「不符合统一界面设计」的直接来源。官方条目的详情页也走 plugins.item 的
-      // view:'page'，但本插件是 bundle（file: 安装），那条路根本不会命中。
+      // 「不符合统一界面设计」的直接来源。
       const renderCard = (view: 'summary' | 'page') => (
         <SettingsCard view={view} store={compassCard.store} actions={compassCard.actions} />
       )
@@ -195,7 +196,9 @@ export function apply(ctx: Context): void {
           // label 是账本的显示名：缺了只出现一行空白条目（宿主三个自带插件都带）。
           label: '上下文罗盘配置',
         } as never,
-        () => renderCard('summary'),
+        // 视图必须由宿主给，不能写死：同一个席位在列表行要渲染一句话描述，在
+        // 详情页要渲染表单。写死成 summary 会让详情页拿到摘要、永远空着。
+        (props: { view: 'summary' | 'page' }) => renderCard(props.view),
       ) as never)
       const bundleSeat = ctx.slots.inject('plugins.bundle.config', function* () {
         yield ctx.slots.register(

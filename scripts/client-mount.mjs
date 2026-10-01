@@ -269,6 +269,13 @@ assert.equal(itemReg[0].name, 'plugins.item')
 assert.equal(itemReg[0].id, 'context-compass', '列表行 id 是账本键')
 assert.equal(itemReg[0].order, 90)
 assert.equal(itemReg[0].label, '上下文罗盘配置', '账本显示名不能缺（缺了只出现一行空白条目）')
+// 视图必须透传：同一个席位在列表行渲染一句话、在详情页渲染表单。写死 summary
+// 会让详情页只剩标题和摘要、下面全空——而列表行看起来一切正常，极难自查。
+// 断言落在「组件把宿主的 view 原样传下去」这一层。
+for (const view of ['summary', 'page']) {
+  const el = itemReg[1]({ view })
+  assert.equal(el.props.view, view, `view=${view} 必须透传给 SettingsCard`)
+}
 // 表单：bundle 详情页走 plugins.bundle.config，keyed by **包名**
 const bundleGen = byName['plugins.bundle.config'].fn()
 const bundleReg = bundleGen.next().value
