@@ -16,7 +16,7 @@
  */
 import assert from 'node:assert/strict'
 import { Context } from '@deepseek-ai/cordis'
-import { assertLogOffset } from './tests/helpers.mjs'
+import { assertKeysIterable } from './tests/helpers.mjs'
 
 const session = { header: { cwd: '/tmp/ws' } }
 const registrations = { commands: null, tools: null, projections: null, routes: [] }
@@ -64,11 +64,11 @@ ctx.provide('sessionQuery', {
   readTitleSnapshots: async ids => ids.map(id => ({ sessionId: id, status: 'fulfilled', value: { title: { title: `标题-${id}` } } })),
 })
 ctx.provide('sessionProjectionCache', {
-  // 宿主契约：cachedSnapshot(meta, inheritedEventCount, keys?)——第二参必需且必须是
-  // 非负安全整数（内部 identityOf → SessionLogOffset，否则 TypeError）；同步返回。
-  // 宿主自 0.1.2 起没有可用的 coldSnapshot（private + 三参 + 零调用点），桩里也不提供。
-  cachedSnapshot: (meta, inheritedEventCount) => {
-    assertLogOffset(inheritedEventCount)
+  // 宿主 0.2.0-rc.2 契约：cachedSnapshot(meta, keys?)——无 offset 参，身份由宿主内部
+  // lifecycleIdentityOf 判定；同步返回。宿主自 0.1.2 起没有可用的 coldSnapshot
+  // （private + 三参 + 零调用点），桩里也不提供。
+  cachedSnapshot: (meta, keys) => {
+    assertKeysIterable(keys)
     return { asOfSeq: 5, values: { sessionHealth: { severity: 'yellow', advice: 'a', ratio: 0.6, total: 600_000, window: 1_000_000, turns: 1, userMessages: 1, assistantMessages: 0, compactions: 0, uncachedInputTokens: 600_000, cacheReadTokens: 0, effectivePerRound: 600_000, effectivePerRoundUsd: 0.168, effectivePerRoundCny: null, pricePeriod: null } } }
   },
 })
@@ -175,7 +175,7 @@ try {
   offCtx.provide('tools', { register: () => {} })
   offCtx.provide('webServer', { register: () => () => {} })
   offCtx.provide('sessionQuery', { listEvents: async () => [], listSessions: async () => [] })
-  offCtx.provide('sessionProjectionCache', { cachedSnapshot: (meta, inheritedEventCount) => { assertLogOffset(inheritedEventCount); return { values: {} } } })
+  offCtx.provide('sessionProjectionCache', { cachedSnapshot: (meta, keys) => { assertKeysIterable(keys); return { values: {} } } })
   offCtx.provide('sessionTitle', { get: () => undefined })
   const offRegs = { projections: null }
   offCtx.provide('sessionProjections', { register: def => { offRegs.projections = def }, snapshot: () => ({ values: {} }) })
@@ -200,7 +200,7 @@ try {
   c1Ctx.provide('tools', { register: tool => { c1Regs.tools = tool } })
   c1Ctx.provide('webServer', { register: () => () => {} })
   c1Ctx.provide('sessionQuery', { listEvents: async () => [], listSessions: async () => [] })
-  c1Ctx.provide('sessionProjectionCache', { cachedSnapshot: (meta, inheritedEventCount) => { assertLogOffset(inheritedEventCount); return { values: {} } } })
+  c1Ctx.provide('sessionProjectionCache', { cachedSnapshot: (meta, keys) => { assertKeysIterable(keys); return { values: {} } } })
   c1Ctx.provide('sessionTitle', { get: () => undefined })
   c1Ctx.provide('sessionProjections', { register: () => () => {}, snapshot: () => ({ values: {} }) })
   const fake = {
@@ -282,7 +282,7 @@ try {
     c.provide('tools', { register: () => {} })
     c.provide('webServer', { register: () => () => {} })
     c.provide('sessionQuery', { listEvents: async () => [], listSessions: async () => [] })
-    c.provide('sessionProjectionCache', { cachedSnapshot: (meta, inheritedEventCount) => { assertLogOffset(inheritedEventCount); return { values: {} } } })
+    c.provide('sessionProjectionCache', { cachedSnapshot: (meta, keys) => { assertKeysIterable(keys); return { values: {} } } })
     c.provide('sessionTitle', { get: () => undefined })
     c.provide('sessionProjections', { register: () => () => {}, snapshot: () => ({ values: {} }) })
     c.provide('settings', dupGuard)

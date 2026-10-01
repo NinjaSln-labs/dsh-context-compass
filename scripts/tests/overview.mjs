@@ -8,7 +8,7 @@ import assert from 'node:assert/strict'
 import { buildOverview, sortOverviewRows, rankOf, clearTitleCache, refreshBlankTruth, warmBlankTruth, handleOverviewRpc, buildHandoffSummary, __resetOverviewCachesForTests } from '../../lib/overview.js'
 import {
   check, config, signal, services, overviewCtx, overviewServices,
-  healthOf, fakeRes, fakeReq, cacheCalls, resetCacheCalls, assertLogOffset, SESSION_FORMAT_VERSION,
+  healthOf, fakeRes, fakeReq, cacheCalls, resetCacheCalls, assertKeysIterable, SESSION_FORMAT_VERSION,
 } from './helpers.mjs'
 
 export async function run() {
@@ -157,9 +157,9 @@ export async function run() {
         sessionProjectionCache: {
           // 宿主契约：**同步**返回快照（不是 Promise），零 I/O。旧写法把它当
           // `coldSnapshot(id): Promise` 后台化，于是首帧永远是 null——本用例钉住新语义。
-          cachedSnapshot(meta, inheritedEventCount) {
+          cachedSnapshot(meta, keys) {
             called++
-            assertLogOffset(inheritedEventCount)
+            assertKeysIterable(keys)
             return { asOfSeq: 3, values: { sessionHealth: healthOf('blue') } }
           },
         },
@@ -468,17 +468,18 @@ export async function run() {
     assert.deepEqual(rows.map(r => r.id), ['live-nocwd'])
   })
 
-  await check('overview: 检查点读按宿主真实契约调用（第二参 inheritedEventCount 必传且合法）', async () => {
+  await check('overview: 检查点读按宿主真实契约调用（第二参是 keys，不得传 offset）', async () => {
     __resetOverviewCachesForTests()
     resetCacheCalls()
     const { rows } = await buildOverview(overviewCtx, signal)
-    // 契约回归（0.12.2）：宿主 cachedSnapshot(meta, inheritedEventCount, keys?) 内部
-    // 走 identityOf → SessionLogOffset(v)，漏传即 TypeError、异常被 catch 吞掉，
-    // 冷会话 health 会永远 null（自 0.11.1 起潜伏三个版本的 bug）。
-    // helpers 的桩按宿主真实形状复刻了这层校验：漏参/错参会在上面直接抛。
+    // 契约回归：宿主 cachedSnapshot 的第二参走过三代（0.1.1 单参 → 0.1.2~0.1.5
+    // offset → 0.2.0 回到 keys），每一代错位都是**静默**失效：
+    // 0.2.0-rc.2 下传 `0` 会落进 `viewCheckpoint` 的 `new Set(0)` 抛 TypeError，
+    // 被调用点的 try/catch 吞掉 → 冷会话 health 恒 null，无报错无日志、测试全绿。
+    // helpers 的桩复刻了这层抛点：形状再错会在这里直接炸，而不是流到生产。
     assert.ok(cacheCalls.length > 0, 'cachedSnapshot 必须被调用')
     for (const call of cacheCalls) {
-      assert.equal(call.offset, 0, `cachedSnapshot 第二参必须是合法 offset（收到 ${String(call.offset)}）`)
+      assert.ok(Array.isArray(call.keys), `cachedSnapshot 第二参必须是 keys 数组（收到 ${String(call.keys)}）`)
       assert.deepEqual(call.keys, ['sessionHealth'], 'cachedSnapshot 只取本插件要的那一格')
     }
     // 冷行必须**首帧**就带检查点数据——不再有「后台填、下一帧补齐」的等待窗口。

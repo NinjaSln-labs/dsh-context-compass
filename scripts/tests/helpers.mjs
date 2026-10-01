@@ -192,19 +192,30 @@ export const tool = sessionHealthTool(ctx, config)
 
 /* ---------- multi-session overview fixtures (monolith L1090-1136) ---------- */
 /**
- * 宿主真实契约的 `SessionLogOffset` 校验复刻（dsh-session/lib/index.js）：
- * 非「非负安全整数」直接抛 TypeError。检查点桩必须带这一层——0.12.2 前本仓的
- * cachedSnapshot 桩只收一个参数就返回值，把「插件漏传 inheritedEventCount」这个
- * 真契约 bug 整整掩盖了三个版本（pits：stub 按自己假设写 = 掩盖契约 bug）。
+ * 宿主 0.2.0-rc.2 `sessionProjectionCache.cachedSnapshot(meta, keys?)` 的桩。
+ *
+ * **这层桩改过两次，每次都因为它照的是「上一次的契约」而漏掉真断裂**：
+ * - 0.12.2 前：单参 `cachedSnapshot(meta)`，把「插件漏传 inheritedEventCount」掩盖了三个版本
+ * - 0.12.2~0.1.5-rc.1：3 参 + 复刻 `SessionLogOffset` 校验，忠实复刻 0.1.2-alpha.x
+ *   ——于是 0.2.0-rc.2 把第二参移除后，这里同样照不到
+ * - 0.2.0-rc.2 起：回到 2 参。宿主 `viewCheckpoint` 里是 `new Set(keys)`，
+ *   传非可迭代值会抛 `TypeError: number 0 is not iterable`（实测）。桩复刻这一层，
+ *   插件若再把 offset 落到 keys 位，用例当场炸而不是被 try/catch 静默吞掉。
+ *
+ * ⚠️ 换宿主版本时，先读真实实现再改桩：
+ *   `grep -n "cachedSnapshot" -A 8 <dsh>/node_modules/@deepseek-ai/dsh-session-projection-cache/lib/index.js`
+ *   `grep -n "viewCheckpoint" -A 8 <dsh>/node_modules/@deepseek-ai/dsh-session-projection/lib/index.js`
+ *   再在 `<dsh>/node_modules/@deepseek-ai/` 下 grep `cachedSnapshot(` 对照宿主自己的调用点。
  */
-export function assertLogOffset(value) {
-  if (!Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
-    throw new TypeError(`SessionLogOffset must be a non-negative safe integer, got ${String(value)}`)
-  }
-  return value
+
+/** 宿主 `viewCheckpoint` 的 `new Set(keys)` 语义复刻：非可迭代 keys 当场抛（真实宿主行为）。 */
+export function assertKeysIterable(keys) {
+  if (keys === undefined) return
+  // eslint-disable-next-line no-new
+  new Set(keys) // number 0 is not iterable —— 与宿主同一处抛点
 }
 
-/** 记录 cachedSnapshot 的实际调用实参——回归断言「第二参必需且合法」。 */
+/** 记录 cachedSnapshot 的实际调用实参——回归断言「keys 位传的是 keys」。 */
 export const cacheCalls = []
 export function resetCacheCalls() { cacheCalls.length = 0 }
 
@@ -249,23 +260,22 @@ export const overviewServices = {
       },
     }),
   },
-  // 宿主契约：cachedSnapshot(meta, inheritedEventCount, keys?) —— 第二参必需且必须是
-  // 非负安全整数（内部 identityOf → SessionLogOffset）。身份按 (formatVersion, createdAt,
-  // cwd, isSeeded, inheritedEventCount) 匹配：任一不符即「无检查点」。
+  // 宿主 0.2.0-rc.2 契约：cachedSnapshot(meta, keys?) —— 无 offset 参。身份由宿主
+  // 内部 lifecycleIdentityOf(meta) 判定，本桩按 (formatVersion, isSeeded) 近似匹配：
+  // 任一不符即「无检查点」。
   sessionProjectionCache: {
-    cachedSnapshot(meta, inheritedEventCount, keys) {
-      cacheCalls.push({ id: meta?.id, offset: inheritedEventCount, keys })
-      assertLogOffset(inheritedEventCount) // 漏参/错参当场炸（真实宿主行为）
+    cachedSnapshot(meta, keys) {
+      cacheCalls.push({ id: meta?.id, keys })
+      assertKeysIterable(keys) // keys 位传了非可迭代值（旧的 offset 0）当场炸
       const row = CHECKPOINTS[meta?.id]
       if (row === undefined) return undefined
       if (row.version !== meta.version) return undefined
       if (row.isSeeded !== (meta.isSeeded ?? false)) return undefined
-      if (row.inheritedEventCount !== inheritedEventCount) return undefined
       const values = keys === undefined ? row.values : Object.fromEntries(Object.entries(row.values).filter(([k]) => keys.includes(k)))
       return Object.keys(values).length === 0 ? undefined : { asOfSeq: row.asOfSeq, values }
     },
-    // 故意不提供 coldSnapshot：宿主自 0.1.2 起它是 private + 同步 + 三参，
-    // 且宿主自身零调用点。插件再碰它就是回归（会在下方 throwing 用例里炸）。
+    // 故意不提供 coldSnapshot：宿主自 0.1.2 起它是 private + 同步 + 三参
+    // （0.2.0-rc.2 未变），且宿主自身零调用点。插件再碰它就是回归。
   },
   sessionTitle: { get: () => undefined }, // force the batch title path
 }

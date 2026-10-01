@@ -249,21 +249,32 @@ function scheduleTitleFill(ctx: Context, ids: string[], fillSignal: AbortSignal)
 }
 
 /**
- * 检查点读：`sessionProjectionCache.cachedSnapshot(header, inheritedEventCount, keys?)`
- * 是**同步零 I/O** 的 listing 读——宿主自己的 listing 路径（session-controller /
- * session-reference / subagent）都是这么取的，本插件镜像同一调用。
+ * 检查点读：`sessionProjectionCache.cachedSnapshot(header, keys?)` 是**同步零 I/O**
+ * 的 listing 读——宿主自己的 listing 路径（session-reference / api-session-controller）
+ * 都是这么取的（`cachedSnapshot(record.header, ["title", "subagent"])`），
+ * 本插件镜像同一调用。
  *
- * 0.12.2 修正：此前按 0.1.1-rc.2 的旧契约写（`cachedSnapshot(meta)` 单参 +
- * `coldSnapshot(id, signal?): Promise` 后台化），但宿主自 0.1.2-alpha.x 起两处都变了：
- * `cachedSnapshot` 必需第二参 `inheritedEventCount`，宿主内部 `identityOf()` 会对它执行
- * `SessionLogOffset(v)`——非「非负安全整数」直接抛 TypeError；`coldSnapshot` 则改为
- * `(meta, count, events): ProjectionSnapshot`（private、同步、由调用方自备全量日志，
- * 宿主自身零调用点）。旧写法两处都抛，且都在 try/catch 里 → 被静默吞掉 → 冷会话
- * health 永远 null（面板「暂无数据」），而磁盘上 173/189 个检查点是有 sessionHealth 的。
+ * **第二参走过三代，本仓是最脆的一处**（`identityOf` 的 formatVersion 来源那句已随
+ * 身份判定迁到宿主内部，字段名保留在本仓的 header 面上）：
+ * - 0.1.1-rc.2：`cachedSnapshot(meta)` 单参，另配 `coldSnapshot(id, signal?): Promise`
+ * - 0.1.2-alpha.x ~ 0.1.5-rc.1：第二参插入 `inheritedEventCount`（宿主内部
+ *   `identityOf()` 对它执行 `SessionLogOffset(v)`，非「非负安全整数」直接抛 TypeError）；
+ *   `coldSnapshot` 改为 `(meta, count, events): ProjectionSnapshot`（private、同步、
+ *   调用方自备全量日志，宿主自身零调用点）
+ * - **0.2.0-rc.2：第二参又被移除**，回到 `(meta, keys?)`；身份改由宿主内部
+ *   `lifecycleIdentityOf(meta)` 独立判定，不再经由 offset。本仓 0.12.2 按 3 参写的调用
+ *   在这里把 `0` 落到了 `keys` 位 → 宿主 `viewCheckpoint` 的 `new Set(0)` 抛
+ *   `TypeError: number 0 is not iterable` → 被调用点的 try/catch 吞掉 → 冷会话 health
+ *   恒 null。**与 0.12.2 那次同型的静默失效**（无报错、无日志、测试全绿）。
  *
- * 第二参传 0：`SessionHeader` 不带 inherited 计数，宿主自身的 listing 读也一律传
- * `SessionLogOffset(0)`（seeded header 传 0 不会抛——`identityOf` 只在 !isSeeded 且非 0
- * 时抛——只是不会命中 seeded 记录，与宿主 listing 行为一致）。
+ * `coldSnapshot` 自 0.1.2-alpha.x 起一直是 `(meta, count, events)`，到 0.2.0-rc.2
+ * 未变；本插件不用它（0.12.2 已删净那套异步脚手架，改同步零 IO 读）。
+ *
+ * ⚠️ 改这里前先对宿主实现核签名，别照着自己上一次的假设写：
+ *   `grep -n "cachedSnapshot" <dsh>/node_modules/@deepseek-ai/dsh-session-projection-cache/lib/index.js`
+ *   再对照宿主自己的调用点：在 `<dsh>/node_modules/@deepseek-ai/` 下 grep
+ *   `cachedSnapshot(`，宿主有四个独立调用点可作证。
+ *   ——这个签名变过两代，每次错位都是静默失效。
  */
 interface ListRowRec {
   header: {
@@ -287,7 +298,6 @@ interface ListRowRec {
 interface SessionProjectionCacheLike {
   cachedSnapshot(
     meta: ListRowRec['header'],
-    inheritedEventCount: number,
     keys?: readonly string[],
   ): { values?: Record<string, unknown> } | undefined
 }
@@ -496,9 +506,10 @@ export async function buildOverview(ctx: Context, signal: AbortSignal): Promise<
     }
     if (health === null && cache !== undefined) {
       try {
-        // 第二参 inheritedEventCount 必需（宿主 identityOf 会校验，缺了抛 TypeError）；
         // keys 只取本插件要的那一格，省掉其它单元的 schema.parse。
-        const snap = cache.cachedSnapshot(rec.header, 0, ['sessionHealth'])
+        // 第二参是 keys（0.2.0-rc.2 起无 offset 参）——传错位会被宿主 `new Set(keys)`
+        // 抛 TypeError 并被下面 catch 吞掉，故此处形状必须与宿主一致。
+        const snap = cache.cachedSnapshot(rec.header, ['sessionHealth'])
         const value = snap?.values?.sessionHealth as SessionHealthProjection | undefined
         if (value !== undefined && value !== null) health = value
       } catch { /* 无检查点 / 身份不匹配 → 本帧 health=null，下一帧重试 */ }
