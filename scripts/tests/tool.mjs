@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { assess } from '../../lib/assess.js'
 import { buildCommandText } from '../../lib/command.js'
 import { sessionHealthTool } from '../../lib/tool.js'
-import { check, config, signal, session, services, ctx, tool } from './helpers.mjs'
+import { check, config, signal, session, services, ctx, tool, probesOn } from './helpers.mjs'
 
 export async function run() {
   await check('tool: registers name + read kind', () => {
@@ -47,7 +47,7 @@ export async function run() {
     // 第八轮：/compass 命令解析在入口拦截 `>= 0`，但工具路径直传 args——
     // assess 归一化必须与命令一致（isFinite && >= 0），否则负数产出负费用
     // 预期（-¥0.3 / -$0.04 污染工具输出）。直调 assess 与工具路径都必须拦住。
-    const negReport = await assess(ctx, session, 'agent-1', signal, config, { remainingRounds: -3 })
+    const negReport = await assess(ctx, session, 'agent-1', signal, probesOn(config), { remainingRounds: -3 })
     assert.equal(negReport.signals.expectedTotalTokens, null)
     assert.equal(negReport.signals.expectedTotalUsd, null)
     assert.equal(negReport.signals.expectedTotalCny, null)

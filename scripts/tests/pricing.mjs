@@ -10,7 +10,7 @@ import { PriceCache, periodAt, staticPricing } from '../../lib/pricing.js'
 import { healthView } from '../../lib/projection.js'
 import { assess } from '../../lib/assess.js'
 import { buildCommandText } from '../../lib/command.js'
-import { check, config, signal, session, services, OFFICIAL_DOC } from './helpers.mjs'
+import { check, config, signal, session, services, OFFICIAL_DOC, probesOn } from './helpers.mjs'
 
 export async function run() {
   await check('pricing: periodAt follows Beijing wall time', () => {
@@ -200,7 +200,7 @@ export async function run() {
         return services[name]
       },
     }
-    const report = await assess(cnyCtx, session, 'agent-1', signal, config, { remainingRounds: 10 })
+    const report = await assess(cnyCtx, session, 'agent-1', signal, probesOn(config), { remainingRounds: 10 })
     assert.ok(report.signals.expectedTotalCny !== null, 'CNY expected total must be non-null')
     assert.ok(report.signals.expectedTotalUsd !== null, 'USD expected total must be non-null')
     const text = buildCommandText(report, { minimal: false })

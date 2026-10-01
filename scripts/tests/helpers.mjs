@@ -31,6 +31,24 @@ export async function check(name, fn) {
 
 /* ---------- projection fold fixtures (monolith L65-83) ---------- */
 export const config = resolveConfig({})
+
+/**
+ * 打开三项默认关闭的探测（git / sessionResume / knowledge），供验「探测行为」的
+ * 用例使用。这三项自 2026-10-01 起默认关（用户裁定：不该在用户没要求时就去探测
+ * 宿主的外部状态——工作区、上次会话、知识库）。用例要验探测本身时就显式打开，
+ * 不要依赖默认值，否则改默认值会连带改掉「探测是否工作」的测试意图。
+ */
+export function probesOn(base) {
+  return {
+    ...base,
+    checks: {
+      ...base.checks,
+      git: { ...base.checks.git, enabled: true },
+      sessionResume: { ...base.checks.sessionResume, enabled: true },
+      knowledge: { ...base.checks.knowledge, enabled: true },
+    },
+  }
+}
 // Economy floor isolated: fold scenarios stay under 50K so ratio tiers show.
 export const ratioConfig = resolveConfig({ thresholds: { economyTokenFloor: 10_000_000 } })
 export const fold = sessionHealthProjectionDefinition(ratioConfig)
@@ -187,10 +205,12 @@ export const OFFICIAL_DOC = {
 }
 
 /* ---------- /compass command handler fixture (monolith L830) ---------- */
-export const cmdDef = healthCommandDefinition(ctx, config)
+// 这两个 fixture 服务多个用例，且其中多个验的是**探测行为**（git 分支行、
+// no-git 跳过等），故在此显式打开三项默认关闭的探测，而不是依赖默认值。
+export const cmdDef = healthCommandDefinition(ctx, probesOn(config))
 
 /* ---------- context_compass tool fixture (monolith L915) ---------- */
-export const tool = sessionHealthTool(ctx, config)
+export const tool = sessionHealthTool(ctx, probesOn(config))
 
 /* ---------- multi-session overview fixtures (monolith L1090-1136) ---------- */
 /**

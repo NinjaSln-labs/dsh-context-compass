@@ -99,7 +99,9 @@ assert.equal(typeof plugin.apply, 'function', 'plugin object must carry apply')
 assert.equal(plugin.name, 'dsh-context-compass')
 assert.ok(plugin.Config, 'plugin object must carry Config')
 
-await ctx.plugin(plugin).await()
+// 本挂载验的是 **git 探测的输出**（checklist 里的未提交数 / push 状态），而
+// checks.git 自 2026-10-01 起默认关。故显式打开，不依赖默认值。
+await ctx.plugin(plugin, { checks: { git: { enabled: true } } }).await()
 // Let the ctx.inject children (projection / tool / command) settle.
 await new Promise(resolve => setTimeout(resolve, 50))
 

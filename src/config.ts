@@ -49,7 +49,7 @@ export interface ChecksConfig {
   handoff: { enabled: boolean; paths: string[] }
   sessionResume: { enabled: boolean }
   processes: { enabled: boolean }
-  /** 知识库联动（解耦版）：探测 ctx.get('knowledge') 做跨会话回顾；未装则跳过。默认 true。 */
+  /** 知识库联动（解耦版）：探测 ctx.get('knowledge') 做跨会话回顾；未装则跳过。默认关。 */
   knowledge: { enabled: boolean }
 }
 
@@ -135,7 +135,7 @@ export const Config = z.object({
   }),
   checks: z.object({
     git: z.object({
-      enabled: z.boolean().default(true).volatile(),
+      enabled: z.boolean().default(false).volatile(),
       workspaceRoot: z.string().volatile(),
     }),
     handoff: z.object({
@@ -143,10 +143,10 @@ export const Config = z.object({
       /** User-named handoff documents; the concept is yours, the names are yours. */
       paths: z.array(z.string()).default([]).volatile(),
     }),
-    sessionResume: z.object({ enabled: z.boolean().default(true).volatile() }),
+    sessionResume: z.object({ enabled: z.boolean().default(false).volatile() }),
     /** 运行中进程检测（dev server 等）是增量信号——默认关闭（对齐 DESIGN §4.6「关闭时跳过」）；/compass processes 或工具路径显式开启。 */
     processes: z.object({ enabled: z.boolean().default(false).volatile() }),
-    knowledge: z.object({ enabled: z.boolean().default(true).volatile() }),
+    knowledge: z.object({ enabled: z.boolean().default(false).volatile() }),
   }),
   projection: z.object({ enabled: z.boolean().default(true).volatile() }),
   cost: z.object({
@@ -257,18 +257,21 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     messageCountProxy: live(config.thresholds?.messageCountProxy) ?? 800,
     messageCountWindowRatio: live(config.thresholds?.messageCountWindowRatio) ?? 0.002,
   }
+  // 这里的 `?? X` 兜底必须与上方 Config schema 的 `.default(X)` **逐项一致**。
+  // 两份真源只改一边，schema 的新默认值就会被这里的旧字面量盖掉——而且不会有
+  // 任何报错（resolveConfig 对残缺配置本就该静默兜底）。改任一侧都要改另一侧。
   const checks: ChecksConfig = {
     git: {
-      enabled: live(config.checks?.git?.enabled) ?? true,
+      enabled: live(config.checks?.git?.enabled) ?? false,
       workspaceRoot: config.checks?.git?.workspaceRoot,
     },
     handoff: {
       enabled: live(config.checks?.handoff?.enabled) ?? true,
       paths: live(config.checks?.handoff?.paths) ?? [],
     },
-    sessionResume: { enabled: live(config.checks?.sessionResume?.enabled) ?? true },
+    sessionResume: { enabled: live(config.checks?.sessionResume?.enabled) ?? false },
     processes: { enabled: live(config.checks?.processes?.enabled) ?? false },
-    knowledge: { enabled: live(config.checks?.knowledge?.enabled) ?? true },
+    knowledge: { enabled: live(config.checks?.knowledge?.enabled) ?? false },
   }
   const projection: ProjectionConfig = { enabled: live(config.projection?.enabled) ?? true }
   const cost: CostConfig = {

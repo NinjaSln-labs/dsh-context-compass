@@ -20,6 +20,19 @@ export async function run() {
     )
   })
 
+  await check('C1 默认值：git / sessionResume / knowledge 三项默认关', () => {
+    // 2026-10-01 用户裁定：这三项会主动探测宿主外部状态（工作区、上次会话、
+    // 知识库），不该在用户没要求时就跑。默认关、要用显式开。
+    // 钉在这里是为了防止今后被「顺手改回 true」——它们没有任何自测会报警。
+    const d = resolveConfig({})
+    assert.equal(d.checks.git.enabled, false, 'git 默认关')
+    assert.equal(d.checks.sessionResume.enabled, false, 'sessionResume 默认关')
+    assert.equal(d.checks.knowledge.enabled, false, 'knowledge 默认关')
+    // 交接文档探测与投影单元维持默认开：前者是本插件的主职责，后者是响应式徽章的前提。
+    assert.equal(d.checks.handoff.enabled, true, 'handoff 默认开（主职责）')
+    assert.equal(d.projection.enabled, true, 'projection 默认开（徽章响应式的前提）')
+  })
+
   await check('C1: validateConfig 拒绝 NaN/Infinity 数值字段（AUDIT C1-3）', () => {
     validateConfig(resolveConfig({})) // 默认全有限：通过
     // YAML 外部编辑可注入 .nan/.inf（绕过 settings 写路径的 JSON 形状检查）；

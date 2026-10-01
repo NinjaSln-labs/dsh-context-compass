@@ -10,13 +10,13 @@ import assert from 'node:assert/strict'
 import { assess } from '../../lib/assess.js'
 import { buildCommandText } from '../../lib/command.js'
 import { resolveConfig } from '../../lib/config.js'
-import { check, config, signal, session, ctx, cmdDef } from './helpers.mjs'
+import { check, config, signal, session, ctx, cmdDef, probesOn } from './helpers.mjs'
 
 export async function run() {
   await check('assess: non-finite remainingRounds is treated as not provided (no NaN money)', async () => {
     // NaN 能通过 `!== null` 检查——若直接参与乘法会产出 ¥NaN/$NaN。归一化后
     // expectedTotal 全 null，文案无 NaN。
-    const report = await assess(ctx, session, 'agent-1', signal, config, { remainingRounds: NaN })
+    const report = await assess(ctx, session, 'agent-1', signal, probesOn(config), { remainingRounds: NaN })
     assert.equal(report.signals.expectedTotalTokens, null)
     assert.equal(report.signals.expectedTotalUsd, null)
     assert.equal(report.signals.expectedTotalCny, null)
@@ -32,7 +32,7 @@ export async function run() {
     }
     // 精确断言：非法 remaining 按未提供处理 → expectedTotal 全 null（不进
     // 费用预期行），而不是产生 NaN 或错误金额。
-    const nanReport = await assess(ctx, session, 'agent-1', signal, config, { remainingRounds: Number('not-a-number') })
+    const nanReport = await assess(ctx, session, 'agent-1', signal, probesOn(config), { remainingRounds: Number('not-a-number') })
     assert.equal(nanReport.signals.expectedTotalTokens, null)
     assert.equal(nanReport.signals.expectedTotalUsd, null)
     assert.equal(nanReport.signals.expectedTotalCny, null)
@@ -79,10 +79,10 @@ export async function run() {
 
   await check('assess: unsafe handoff paths (absolute / .. escape) are skipped, never probed', async () => {
     // docName / config.paths 可被提示注入引导到 cwd 之外——白名单拒绝并标注。
-    const unsafe = await assess(ctx, session, 'agent-1', signal, config, { docName: '/etc/passwd' })
+    const unsafe = await assess(ctx, session, 'agent-1', signal, probesOn(config), { docName: '/etc/passwd' })
     assert.ok(unsafe.probes.some(p => p.includes('已跳过不安全路径')), `got: ${JSON.stringify(unsafe.probes)}`)
     assert.equal(unsafe.handoff.hasHandoff, null)
-    const dotdot = await assess(ctx, session, 'agent-1', signal, config, { docName: '../../secret.md' })
+    const dotdot = await assess(ctx, session, 'agent-1', signal, probesOn(config), { docName: '../../secret.md' })
     assert.ok(dotdot.probes.some(p => p.includes('已跳过不安全路径')))
     // 相对子目录路径（如 docs/HANDOFF.md）仍允许。
     const relCfg = resolveConfig({ checks: { handoff: { paths: ['docs/HANDOFF.md'] } } })

@@ -8,7 +8,7 @@ import { resolveConfig } from '../../lib/config.js'
 import { healthView } from '../../lib/projection.js'
 import { assess } from '../../lib/assess.js'
 import { startPricingRefresh } from '../../lib/pricing.js'
-import { check, config, signal, session, ctx, services } from './helpers.mjs'
+import { check, config, signal, session, ctx, services, probesOn } from './helpers.mjs'
 
 export async function run() {
   // （checks.processes.enabled 的 ON/OFF 双向已由前方 processes 专测覆盖。）
@@ -47,7 +47,7 @@ export async function run() {
 
   await check('S3: thresholds.economyRoundFloor 移动 A3 升级门槛', async () => {
     // 基线 ctx：经济命中（300K/1M 窗口）→ yellow；remainingRounds 5。
-    const below = await assess(ctx, session, 'agent-1', signal, config, { remainingRounds: 5 })
+    const below = await assess(ctx, session, 'agent-1', signal, probesOn(config), { remainingRounds: 5 })
     assert.equal(below.severity, 'yellow') // 5 < 默认 floor 10：不升级
     const escalated = await assess(ctx, session, 'agent-1', signal, resolveConfig({ thresholds: { economyRoundFloor: 3 } }), { remainingRounds: 5 })
     assert.equal(escalated.severity, 'red') // 5 ≥ 3：黄升一档
@@ -58,13 +58,13 @@ export async function run() {
     const off = await assess(ctx, session, 'agent-1', signal, resolveConfig({ checks: { git: { enabled: false }, handoff: { enabled: false } } }), {})
     assert.ok(off.probes.some(p => p.includes('git 检查：已跳过（配置关闭）')), JSON.stringify(off.probes))
     assert.ok(off.probes.some(p => p.includes('交接文档检查：已跳过（配置关闭）')))
-    const on = await assess(ctx, session, 'agent-1', signal, config, {})
+    const on = await assess(ctx, session, 'agent-1', signal, probesOn(config), {})
     assert.ok(!on.probes.some(p => p.includes('（配置关闭）')))
     assert.equal(on.handoff.isGitRepo, true)
   })
 
   await check('S3: checks.handoff.paths 空 → 未配置 probe；配置路径 → 按路径探测', async () => {
-    const empty = await assess(ctx, session, 'agent-1', signal, config, {})
+    const empty = await assess(ctx, session, 'agent-1', signal, probesOn(config), {})
     assert.ok(empty.probes.some(p => p.includes('交接文档：未配置检查路径')), JSON.stringify(empty.probes))
     // fs stub：stat('HANDOFF.md') 存在 → 配置路径被真实探测。
     const named = await assess(ctx, session, 'agent-1', signal, resolveConfig({ checks: { handoff: { paths: ['HANDOFF.md'] } } }), {})
@@ -73,7 +73,7 @@ export async function run() {
   })
 
   await check('S3: checks.sessionResume.enabled 控制 probe 行', async () => {
-    const on = await assess(ctx, session, 'agent-1', signal, config, {})
+    const on = await assess(ctx, session, 'agent-1', signal, probesOn(config), {})
     assert.ok(on.probes.some(p => p.includes('DSH 会话持久化')), JSON.stringify(on.probes))
     const off = await assess(ctx, session, 'agent-1', signal, resolveConfig({ checks: { sessionResume: { enabled: false } } }), {})
     assert.ok(!off.probes.some(p => p.includes('DSH 会话持久化')))
@@ -83,7 +83,7 @@ export async function run() {
     const kCtx = { get: name => (name === 'knowledge' ? { search: async () => ({ hits: [] }) } : services[name]) }
     const off = await assess(kCtx, session, 'agent-1', signal, resolveConfig({ checks: { knowledge: { enabled: false } } }), {})
     assert.ok(!off.probes.some(p => p.includes('跨会话回顾')), JSON.stringify(off.probes))
-    const on = await assess(kCtx, session, 'agent-1', signal, config, {})
+    const on = await assess(kCtx, session, 'agent-1', signal, probesOn(config), {})
     assert.ok(on.probes.some(p => p.includes('跨会话回顾')), JSON.stringify(on.probes))
   })
 
