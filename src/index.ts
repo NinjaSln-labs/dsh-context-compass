@@ -150,6 +150,17 @@ export default {
       }
     }
     syncProjectionUnit()
+    // `projection.enabled` 是**注册级**事实：它决定投影单元挂不挂。0.2.0-rc.2
+    // 之前靠 settings 的 onChange 钩子重判定；新契约没有该钩子，但 volatile
+    // 机制自带通知——cordis-plugin-loader 推进单元后会 emit
+    // `loader/volatile-update` 并带上变化的字段路径（见其
+    // _commitVolatile 与 lib/types/index.d.ts:29）。不接这个事件，开关就只剩
+    // 「重启才生效」，而配置页里明明写着它可改。
+    ctx.on('loader/volatile-update', (paths) => {
+      for (const path of paths) {
+        if (path[0] === 'projection' && path[1] === 'enabled') { syncProjectionUnit(); return }
+      }
+    })
 
     // Model-callable self-check (optional child).
     ctx.inject(['tools'], (toolCtx) => {

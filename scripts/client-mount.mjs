@@ -192,19 +192,30 @@ const openSessionCalls = []
 ctx.provide('uiWorkspace', {
   openSession: (target) => { openSessionCalls.push(target) },
 })
-const settingsScopeBinds = []
-let settingsScopeGets = 0
-ctx.provide('settingsScope', {
-  bind: (spec) => {
-    settingsScopeBinds.push(spec)
-    return {
-      getSnapshot: () => {
-        settingsScopeGets++
-        return { status: 'ready', value: {}, base: {}, user: undefined, revision: 1, writable: true, mode: 'host' }
-      },
-      subscribe: () => () => {},
-      mutate: async () => {},
-    }
+// 0.2.0-rc.2 的配置页底座：`configForms.get(entryId)` 取代旧的
+// `settingsScope.bind({namespace})`。快照字段（status/value/base/user/revision/
+// writable/mode）逐项同构；mutate 回 Promise<boolean>（宿主是否受理）而非 void。
+// 桩按真实形状写——旧的 bind 桩会让「还绑在 settingsScope 上」这类漏改全盲。
+const configFormGets = []
+const whileServedCalls = []
+let configFormSnapshotReads = 0
+const makeConfigForm = () => ({
+  getSnapshot: () => {
+    configFormSnapshotReads++
+    return { status: 'ready', value: {}, base: {}, user: undefined, revision: 1, writable: true, mode: 'host' }
+  },
+  subscribe: () => () => {},
+  mutate: async () => true,
+  set: async () => true,
+  unset: async () => true,
+  dispose: async () => {},
+})
+ctx.provide('configForms', {
+  get: (entryId) => { configFormGets.push(entryId); return makeConfigForm() },
+  whileServed: (namespaces, register) => {
+    whileServedCalls.push(namespaces)
+    const dispose = register(new Set(namespaces))
+    return () => { dispose() }
   },
 })
 
@@ -222,10 +233,10 @@ assert.ok(byName['conversation.session.header.utilities'], 'badge seat registere
 assert.ok(byName['sidebar.footer.action'], 'overview opener seat registered')
 assert.ok(byName['shell.overlay'], 'overview panel seat registered')
 assert.ok(byName['conversation.chat.commandview'], 'commandview seat registered')
-assert.ok(byName['settings.plugin.item'], 'C2 settings card seat registered')
-assert.equal(settingsScopeBinds.length, 1, 'apply must bind settingsScope once')
-assert.deepEqual(settingsScopeBinds[0], { namespace: 'context-compass' }, 'bound to the host settings namespace')
-assert.ok(settingsScopeGets >= 1, 'bind → immediate project() must consume scope.getSnapshot')
+assert.ok(byName['plugins.item'], 'C2 config card seat registered (0.2.0 slot)')
+assert.deepEqual(configFormGets, ['context-compass'], 'must take the form for our own settings namespace')
+assert.deepEqual(whileServedCalls, [['context-compass']], 'page registration is gated on whileServed(our namespace)')
+assert.ok(configFormSnapshotReads >= 1, 'get() → immediate project() must consume the form snapshot')
 // Each seat factory must produce a working slots.register call.
 const badgeReg = byName['conversation.session.header.utilities'].fn()
 assert.equal(badgeReg[0].id, 'session-health-dot')
@@ -238,10 +249,10 @@ assert.equal(overlayReg[0].name, 'shell.overlay')
 const cardReg = byName['conversation.chat.commandview'].fn()
 assert.equal(cardReg[0].name, 'conversation.chat.commandview')
 assert.equal(cardReg[0].key, 'compass')
-const settingsGen = byName['settings.plugin.item'].fn()
-const settingsReg = settingsGen.next().value
-assert.equal(settingsReg[0].name, 'settings.plugin.item')
-assert.equal(settingsReg[0].key, 'context-compass')
+const settingsReg = byName['plugins.item'].fn()
+assert.equal(settingsReg[0].name, 'plugins.item')
+assert.equal(settingsReg[0].id, 'context-compass', 'id is the settings namespace — 与宿主 whileServed 的键一致')
+assert.equal(settingsReg[0].order, 90)
 console.log('  ok  apply ran: badge + overview opener + overview panel + /compass card seats + settings card')
 
 // 4b) commands.execute 桩的契约保真度（0.2.0-rc.2 破口回归）。
@@ -278,7 +289,7 @@ assert.equal(styleTags[0].dataset.plugin, 'dsh-context-compass', 'style tag must
 assert.ok(styleTags[0].textContent.includes('.sh-badge'), 'style tag must carry the badge CSS')
 console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compass">')
 
-// 5b) 宿主 0.2.0-rc.2 起没有 settingsScope 服务 → 整个 client bundle 必须照常挂载。
+// 5b) 缺 configForms 服务（探测路径失效）→ 整个 client bundle 必须照常挂载。
 // 这是本仓最险的一条：settingsScope 原在 required `inject` 里，cordis 遇到永不
 // 出现的 required 服务会让 entry 永远 pending —— apply 根本不跑，徽章/面板/命令卡
 // 一起消失且零报错。回归钉住「缺 settingsScope 只掉配置卡，不掉其它四席」。
@@ -295,16 +306,16 @@ console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compas
   bare.provide('remote.commands', { execute: bareExecute })
   bare.provide('locale', { snapshot: { active: 'zh' } })
   bare.provide('uiWorkspace', { openSession: () => {} })
-  // 刻意不 provide settingsScope —— 复刻宿主 0.2.0-rc.2 的实况。
+  // 刻意不 provide configForms —— 复刻配置页底座不可用的实况。
   let applied = false
   try {
     await bare.plugin(plugin).await()
     applied = true
   } catch (error) {
-    console.error('client mount FAILED without settingsScope — apply threw:')
+    console.error('client mount FAILED without configForms — apply threw:')
     throw error
   }
-  assert.ok(applied, '缺 settingsScope 时 apply 仍须完成（不得因 bind TypeError 抛错）')
+  assert.ok(applied, '缺 configForms 时 apply 仍须完成（不得因探测抛错）')
   const bareByName = Object.fromEntries(bareSeats.map(s => [s.name, s]))
   for (const seat of [
     'conversation.session.header.utilities',
@@ -312,10 +323,10 @@ console.log('  ok  stylesheet injected as <style data-plugin="dsh-context-compas
     'shell.overlay',
     'conversation.chat.commandview',
   ]) {
-    assert.ok(bareByName[seat], `缺 settingsScope 时 ${seat} 仍须注册`)
+    assert.ok(bareByName[seat], `缺 configForms 时 ${seat} 仍须注册`)
   }
-  assert.equal(bareByName['settings.plugin.item'], undefined, '缺 settingsScope 时只跳过 C2 配置卡')
-  console.log('  ok  no settingsScope (host 0.2.0-rc.2): four seats survive, C2 card skipped')
+  assert.equal(bareByName['plugins.item'], undefined, '缺 configForms 时只跳过 C2 配置卡')
+  console.log('  ok  no configForms: four seats survive, C2 card skipped')
 }
 
 // 6) C2 card-form controller unit tests (fake scope drives the form).

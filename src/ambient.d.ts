@@ -19,3 +19,14 @@ import '@deepseek-ai/dsh-client-ui-chat/client'
 import '@deepseek-ai/dsh-client-ui-conversation'
 import '@deepseek-ai/dsh-client-ui-settings/client'
 import '@deepseek-ai/dsh-commands'
+
+// cordis-plugin-loader 在推进 volatile 单元后发出的变更通知。宿主侧实现在
+// cordis-plugin-loader/lib/index.js 的 _commitVolatile，类型声明在同包
+// lib/types/index.d.ts:29。本仓不直接依赖该包（只用它的事件名），故在此
+// 就地声明，避免为一个事件引入运行时依赖。
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /** 一次 volatile 配置写入后，变化的字段路径（逐段数组）。 */
+    'loader/volatile-update'(paths: readonly (readonly string[])[]): void
+  }
+}

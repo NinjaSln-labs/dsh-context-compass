@@ -14,10 +14,20 @@ export interface CompassScopeSnapshot {
   mode: 'host' | 'memory'
 }
 
+/**
+ * C2 卡片对配置表单的最小依赖面。
+ *
+ * 0.2.0-rc.2 起这个角色由宿主的 `ctx.configForms.get(entryId)` 承担，返回的
+ * `ConfigForm` 形状与本接口**逐字段同构**（status/value/base/user/revision/
+ * writable/mode 语义完全一致，见 dsh-client-ui-settings/lib/types/client/
+ * config-form-types.d.ts 的 ConfigFormSnapshot）——宿主是把旧 scope 泛化了。
+ * `mutate` 的返回类型放宽成 unknown：新契约回 Promise<boolean>（宿主是否受理），
+ * 旧契约是 Promise<void>，卡片只用「await 完再回读判定」，不消费该值。
+ */
 export interface CompassScopeLike {
   getSnapshot(): CompassScopeSnapshot
   subscribe(listener: () => void): () => void
-  mutate(ops: readonly PathOp[], expectedRevision?: number): Promise<void>
+  mutate(ops: readonly PathOp[], expectedRevision?: number): Promise<unknown>
 }
 
 export interface FieldDraftState {

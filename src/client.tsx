@@ -43,9 +43,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
       kind: 'list'
       scope: 'root'
     }
-    /** 设置 → 插件配置 → 罗盘配置卡（keyed by settings namespace）。 */
-    'settings.plugin.item': {
-      kind: 'keyed'
+    /**
+     * Plugins 页里的插件配置项（0.2.0-rc.2 起的落点）。
+     *
+     * 旧落点 `settings.plugin.item` 在 0.2.0 的 slot 注册表里已不存在——
+     * 现行的是 `plugins.item`（bash / subagent / web-search 等插件自身配置
+     * 都注册在这里）与 `settings.general.item`。本插件是插件自身的配置项，
+     * 归 `plugins.item` 才与同类同构。
+     */
+    'plugins.item': {
+      kind: 'list'
       scope: 'root'
       owner: { children?: never }
     }
@@ -56,6 +63,7 @@ import { HealthBadge } from './client/badge.tsx'
 import { CompassCommandCard } from './client/command-card.tsx'
 import { OverviewAction, OverviewPanel, OverviewStore } from './client/overview.tsx'
 import { createSettingsCard } from './client/settings-card/index.ts'
+import type { CompassScopeLike } from './client/settings-card/card-form.ts'
 import { SettingsCard } from './client/settings-card/card.tsx'
 import type { ProjectionFace, CommandsRemote } from './client/shared.ts'
 // Re-export the report parser + pressure helpers — the client-mount test
@@ -105,15 +113,20 @@ export function apply(ctx: Context): void {
   // a re-apply starts fresh, an unload takes the registrations with it).
   const overviewStore = new OverviewStore()
 
-  // C2：罗盘配置卡 controller。`settingsScope` 是**可选**服务——
-  // 宿主 0.2.0-rc.2 起已移除该服务（settings 改为 SettingsForms 从 schema 派生），
-  // 探测不到时只跳过配置卡，徽章/一览面板/命令卡照常注册。
-  // cast：宿主 SettingsScope 与自建 CompassScopeLike 因 mutate 参数逆变不直接兼容，
-  // 用双 cast（as unknown as）保证通过（形状已由契约复核确认，语义明确）。
-  const compassCard = bindCompassCard(ctx)
-  if (compassCard !== undefined) {
-    ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
-  }
+  // C2：罗盘配置卡。0.2.0-rc.2 起底座是宿主的 `configForms` 服务（旧的
+  // `settingsScope` 已移除），页面注册也从 `settings.plugin.item` 迁到了
+  // `plugins.item`——旧 slot 在 0.2.0 的注册表里已不存在，即便底座可用也
+  // 永远渲染不出来。两处都是宿主契约，不可凭直觉沿用旧名。
+  //
+  // configForms 仍按**可选**服务处理：探测不到只跳过配置卡，徽章/一览面板/
+  // 命令卡照常注册。宁可少一张卡，也不要因为配置面挂掉拖垮整个 client 包。
+  const configForms = (ctx as unknown as {
+    get(name: string): {
+      get(entryId: string): CompassScopeLike
+      whileServed(namespaces: readonly string[], register: (served: ReadonlySet<string>) => () => void): () => void
+    } | undefined
+  }).get('configForms')
+  const compassCard = configForms === undefined ? undefined : createSettingsCard(configForms.get('context-compass'))
 
   ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register(
     { name: 'conversation.session.header.utilities', id: 'session-health-dot', order: 10 } as never,
@@ -152,42 +165,29 @@ export function apply(ctx: Context): void {
       />
     ),
   ) as never)
-  // C2 配置卡只在 settingsScope 可用时注册（宿主 0.2.0-rc.2 起无此服务）。
-  if (compassCard !== undefined) {
-    ctx.slots.inject('settings.plugin.item', function* () {
-      yield ctx.slots.register(
-        { name: 'settings.plugin.item', key: 'context-compass' } as never,
-        () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
-      ) as never
-    })
+  // C2 配置卡：与 C1 的 settings.configure({auto:true}) 配成一对两半——
+  // 宿主侧声明本条目可配置，客户端侧在宿主真的提供该命名空间时才注册页面。
+  // `whileServed` 是宿主的门控：命名空间没被提供就不注册（部署里没组合到宿主
+  // 插件时，页面连痕迹都不留），这正是现行 bash/subagent/web-search 的写法。
+  if (configForms !== undefined && compassCard !== undefined) {
+    ctx.effect(() => configForms.whileServed(['context-compass'], () => ctx.slots.inject('plugins.item', () => ctx.slots.register(
+      {
+        name: 'plugins.item',
+        id: 'context-compass',
+        order: 90,
+        // label 是账本的显示名：`plugins.item` 在 plugin-manager 里被投影成
+        // `{ id, label }` 列表，label 缺失就只出现一行空白条目（宿主 shell /
+        // subagent / web-search 全部都带）。
+        label: '上下文罗盘配置',
+      } as never,
+      () => <SettingsCard store={compassCard.store} actions={compassCard.actions} />,
+    ) as never)))
+    ctx.effect(() => () => { try { compassCard.dispose() } catch { /* ignore */ } })
+  } else {
+    console.warn(
+      '[dsh-context-compass] configForms 服务不可用（宿主 0.2.0-rc.2 起配置页底座由 settingsScope 换成 configForms）'
+      + '——跳过插件配置卡；徽章/命令卡/一览面板不受影响。配置请改 profile patch。',
+    )
   }
 }
 
-/**
- * C2 配置卡的 controller。`settingsScope` 缺失（宿主 0.2.0-rc.2 起移除该服务）
- * 时返回 undefined 并告警——**不能抛**：apply 抛错会让本 entry 整个挂载失败，
- * 连带徽章、一览面板、命令卡一起消失。
- *
- * 必须用 `ctx.get(name)` 探，**不能读 `ctx.settingsScope` 属性**：cordis 的拓扑
- * 代理会对未在 inject 列表里的属性读直接抛 `cannot get property "settingsScope"
- * without inject`（0.2.0-rc.2 首次实测撞到）。`ctx.get` 是唯一无 inject 要求的读法，
- * 未提供时返回 undefined。
- */
-function bindCompassCard(ctx: Context): ReturnType<typeof createSettingsCard> | undefined {
-  const scope = (ctx as unknown as { get(name: string): { bind(spec: { namespace: string }): unknown } | undefined })
-    .get('settingsScope')
-  if (scope === undefined || typeof scope.bind !== 'function') {
-    console.warn(
-      '[dsh-context-compass] settingsScope 服务不可用（宿主 0.2.0-rc.2 起已移除）——'
-      + '跳过设置页配置卡；徽章/命令卡/一览面板不受影响。配置请改配置文件。',
-    )
-    return undefined
-  }
-  try {
-    // bind 返回的 scope 已挂 dispose 到调用方 fiber（官方 bind 内置 ctx.effect）
-    return createSettingsCard(scope.bind({ namespace: 'context-compass' }) as unknown as Parameters<typeof createSettingsCard>[0])
-  } catch (err) {
-    console.warn(`[dsh-context-compass] 配置卡绑定失败，跳过设置页卡片：${err instanceof Error ? err.message : String(err)}`)
-    return undefined
-  }
-}

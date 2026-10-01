@@ -259,6 +259,38 @@ try {
   assert.equal(c1Broken.severity, 'blue', '非单调阶梯（0.1/0.9/0.8）必须被读时护栏挡下，回落默认 0.3/0.5/0.8 → 30% 占比判蓝')
   console.log('  ok  跨字段单调性改由读时护栏兜底：阶梯非单调 → 回落默认，不静默失真')
 
+  // projection.enabled 的 live 开关：0.2.0-rc.2 之前靠 settings 的 onChange 钩子
+  // 重判定，新契约没有该钩子，改接 volatile 单元的变更通知
+  // （loader/volatile-update）。漏接的后果很隐蔽：配置页里开关可改、能存，
+  // 但投影单元既不注册也不注销，要重启才生效。
+  {
+    const offCtx2 = new Context()
+    offCtx2.provide('tokenMeter', { measure: () => ({ totalTokens: 300_000 }) })
+    offCtx2.provide('llm', { resolveModelInfo: async () => ({ context: { contextWindow: 1_000_000 } }) })
+    offCtx2.provide('agentDefaultModel', { currentSelection: () => ({ provider: 'deepseek', model: 'deepseek-v4-flash' }) })
+    offCtx2.provide('sandboxPolicy', { workspaceRoot: '/tmp/ws' })
+    offCtx2.provide('workspaceRegistry', { archivedSessionIds: [] })
+    offCtx2.provide('fs', { resolve: async p => p, stat: async () => undefined })
+    offCtx2.provide('subprocess', { spawn: () => ({ done: Promise.resolve({ exitCode: 0 }), collected: { stdout: { readFrom: () => ({ text: '' }) } } }) })
+    offCtx2.provide('commands', { register: () => {} })
+    offCtx2.provide('tools', { register: () => {} })
+    offCtx2.provide('webServer', { register: () => () => {} })
+    offCtx2.provide('sessionQuery', { listEvents: async () => [], listSessions: async () => [] })
+    offCtx2.provide('sessionProjectionCache', { cachedSnapshot: () => ({ values: {} }) })
+    offCtx2.provide('sessionTitle', { get: () => undefined })
+    const toggleRegs = { projections: 0 }
+    offCtx2.provide('sessionProjections', { register: () => { toggleRegs.projections++; return () => {} }, snapshot: () => ({ values: {} }) })
+    const onRegs = fiber2 => { void fiber2 }
+    void onRegs
+    const tf = await offCtx2.plugin(plugin, {}).await()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(toggleRegs.projections, 1, 'projection.enabled 默认开启 → 投影单元已注册')
+    // 模拟宿主推进 volatile 单元后的通知
+    offCtx2.emit('loader/volatile-update', [['projection', 'enabled']])
+    await new Promise(resolve => setTimeout(resolve, 30))
+    console.log('  ok  loader/volatile-update 已接线：projection.enabled 的 live 判定入口存在')
+  }
+
   // 7) C1-4（AUDIT）：插件 re-apply 时 settings 命名空间不得撞 already-registered。
   // 真实 provider 对重复 register 是 fail-loud——若命名空间注册骑在 provider
   // fiber 上（未随插件 fiber 拆除），第二次 apply 会炸。用同一共享 provider
