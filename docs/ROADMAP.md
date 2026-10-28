@@ -104,7 +104,6 @@
 
 - [ ] **R5 轮次语义细化（A5）· P3** — 区分多工具调用的回合：「轮次 X / 步数 Y」（依赖：投影加 step 计数）
 - [ ] **R6 多币种 / 实时汇率 · P3** — 收益低、外部依赖脆，暂缓（依赖：外部汇率源）
-- [ ] **压缩比例参与 severity 判定** — 压缩比例（压缩前后压力快照差值推断）目前只进浮层展示，不参与档位判定；按 50%／30% 两档接入阶梯（依赖：判定入口 `src/projection.ts` 的 `healthView`）
 
 ## 被阻塞项
 
@@ -132,6 +131,13 @@
 - 优先级/排期变化只改这里；`.handoff/`（本地私有未追踪）/ `DESIGN.md` / `OPTIMIZATION-RESEARCH.md` 引用本文件、不复制路线内容
 - **peer 基线策略**：`peerDependencies` 声明"最低要求的服务版本"，保持宽松、不随 harness 每次升级而升。**2026-08-29 已升 `^0.1.1-rc.2`**（此前 `^0.1.0-rc.6` 有 semver prerelease 门控陷阱：`>=0.1.0-rc.6 <0.2.0` 的带 prerelease 比较符元组是 0.1.0，仅 rc.8 这类元组 0.1.0 的版本匹配；0.1.1 系列元组 0.1.1 **不匹配**——旧 range 连当前部署 0.1.1-rc.2 都声明不上）。`^0.1.1-rc.2` 覆盖 0.1.1-rc.2 + 未来 0.1.2 正式版（`<0.2.0`）；**0.1.2-alpha.1 尚未发布 npm（暂不可声明 `^0.1.2-*`），待发布且接入其独有 API 时再局部升**（参考：C1 接入 `@deepseek-ai/dsh-settings` 的局部升先例）
 - **升级体检基线（S1 依据）**：每次 harness 升级，对照 live 契约校验插件硬注入（commands / tools / sessionProjections / webServer）+ 全部 `ctx.get` 可选读取 + client slot（sidebar.footer.action / shell.overlay / conversation.session.header.utilities / conversation.chat.commandview / settings.plugin.item）是否仍存在、形状是否兼容。rc.8 校验通过（见 commit `5a00d11`/`04a4600` 前后；原文 `9b98c07` 为早期改写前坐标）；**0.1.5-rc.1 体检完成（0.12.2，全绿）**——当年在 0.1.2-alpha.1 记的两条「预判影响」实测结论：① `coldSnapshot` 签名确实 breaking（**已修，见 0.12.2**）② `conversation.chat.commandview` slot **未移除**（实测存在且本插件 seat active，该预判有误）。**教训**：预判影响必须落成实测项，否则会像 coldSnapshot 一样潜伏三个版本（fail-soft 路径无症状）
+
+### 0.13.4 压缩比例分档标注 · 2026-10-29
+
+- **压缩比例进入判定链（t000036 收口）** — 压缩比例此前只进浮层展示、不参与任何判定。**落地形态＝分档标注**：≥50% 提示「早期细节已大量摘要化，依赖早期内容的结论需复核」，≥30% 提示「早期细节部分摘要化」，以下只报数字。阈值可配（新增 `compressionRatioMid` / `compressionRatioHigh` 两个 volatile 字段，进 schema + 配置卡；卡内字段 18 → 20，单调性校验 mid < high 与容量三档同规则）
+- ⚠ **刻意不升档**（用户裁定 + 两条技术理由）：① 压缩比例高常是容量压力的**结果**（压了才变小），当作独立信号＝同一事实算两次；② 压缩后上下文变小 ⇒ 容量维反而转绿，此时升档与容量信号自相矛盾。压缩比例还是**快照差值推断**（非精确统计），未观测到折叠时为 null（该维度缺席，不默认「未压缩」）
+- **测试** +5 组：只标注不移档 / 三档措辞 + 阈值可配 / 标注不掩盖档位理由 / 压缩比例两档单调性拒绝
+- **配置卡字段数** 18 → 20（新增两个 volatile 阈值字段，卡内字段集 == schema volatile 集的对账断言自动通过）
 
 ### 0.13.0 dsh@0.2.0-rc.2 全面适配
 

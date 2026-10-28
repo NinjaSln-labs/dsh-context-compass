@@ -60,6 +60,8 @@ export const FIELDS: readonly FieldSpec[] = [
   { path: ['thresholds', 'economyRoundFloor'], kind: 'number', group: '阈值', label: '经济档剩余轮数（economyRoundFloor）', hint: '剩余轮数低于此值经济成本开始累积。默认 10。', writable: true },
   { path: ['thresholds', 'messageCountProxy'], kind: 'number', group: '阈值', label: '消息数代理下限（messageCountProxy）', hint: '消息数超过此值（与窗口比例取较大者）触发体积维度。默认 800。', writable: true },
   { path: ['thresholds', 'messageCountWindowRatio'], kind: 'number', group: '阈值', label: '消息数代理窗口比例（messageCountWindowRatio）', hint: '窗口比例组件。默认 0.002。', min0max1: true, writable: true },
+  { path: ['thresholds', 'compressionRatioMid'], kind: 'number', group: '阈值', label: '压缩比例标注档（compressionRatioMid）', hint: '上次压缩比例 ≥ 此值时标注「早期细节部分摘要化」。默认 0.3。**只影响标注文案，不改判定档位**（压缩后上下文变小、容量维反而转绿，升档会自相矛盾）。', min0max1: true, writable: true },
+  { path: ['thresholds', 'compressionRatioHigh'], kind: 'number', group: '阈值', label: '压缩比例标注重档（compressionRatioHigh）', hint: '上次压缩比例 ≥ 此值时标注「早期细节已大量摘要化」。默认 0.5。**只影响标注文案，不改判定档位**。', min0max1: true, writable: true },
   { path: ['checks', 'git', 'enabled'], kind: 'boolean', group: '检查项', label: 'Git 探测', hint: '开关 git 工作区/未提交/分支状态探测。默认关。', writable: true },
   { path: ['checks', 'git', 'workspaceRoot'], kind: 'string', group: '检查项', label: 'Git 工作区根（可选）', hint: '留空则用会话 cwd。', writable: true },
   { path: ['checks', 'handoff', 'enabled'], kind: 'boolean', group: '检查项', label: '交接文档探测', hint: '开关 HANDOFF.md 探测。默认开。', writable: true },

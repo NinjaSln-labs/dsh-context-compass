@@ -315,9 +315,19 @@ export function healthView(
   const compressionRatio = typeof rawRatio === 'number' && Number.isFinite(rawRatio) && rawRatio >= 0 && rawRatio <= 1
     ? rawRatio
     : null
-  const ratioNote = compressionRatio !== null
-    ? `；上次压缩比例 ≈ ${Math.round(compressionRatio * 100)}%，快照口径`
-    : ''
+  // ⚠ The ratio **annotates, it does not tier** (see ThresholdsConfig): a high
+  // ratio is usually the capacity signal's *outcome* (the context shrank
+  // because it was compacted), so scoring it again would double-count one
+  // fact — and after a fold the context shrank, i.e. the capacity dimension
+  // itself turned greener. The two thresholds therefore decide **how loudly
+  // the ratio is mentioned**, not which tier the session gets.
+  const ratioNote = compressionRatio === null
+    ? ''
+    : compressionRatio >= t.compressionRatioHigh
+      ? `；上次压缩比例 ≈ ${Math.round(compressionRatio * 100)}%（快照口径）——早期细节已大量摘要化，依赖早期内容的结论需复核`
+      : compressionRatio >= t.compressionRatioMid
+        ? `；上次压缩比例 ≈ ${Math.round(compressionRatio * 100)}%（快照口径）——早期细节部分摘要化`
+        : `；上次压缩比例 ≈ ${Math.round(compressionRatio * 100)}%，快照口径`
   const compacted = (() => {
     if (!(compactions > 0)) return ``
     const freqNote = compactIntervalRounds(turns, compactions)

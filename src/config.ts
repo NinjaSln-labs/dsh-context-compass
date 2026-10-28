@@ -43,6 +43,28 @@ export interface ThresholdsConfig {
    * Default 0.002: 128K → max(800, 256)=800, 1M → max(800, 2000)=2000.
    */
   messageCountWindowRatio: number
+  /**
+   * Compression-ratio floor for the "early detail summarized" annotation.
+   * Default 0.3.
+   *
+   * ⚠ The compression ratio is an **inference** (1 − post/pre pressure
+   * snapshots), not exact compaction statistics, and it only exists after the
+   * first observed fold (null before that = "dimension absent", never
+   * "not compressed").
+   *
+   * ⚠ **Annotation only — it does NOT move the severity tier.** Two reasons:
+   * ① a high ratio usually *is* the capacity signal's outcome (the context
+   * shrank because it was compressed), so scoring it again would double-count
+   * one fact; ② after a fold the context shrank ⇒ the capacity dimension
+   * itself turns greener, so raising the tier would contradict it. These
+   * thresholds only decide **how loudly the ratio is mentioned**.
+   */
+  compressionRatioMid: number
+  /**
+   * Compression-ratio floor for the "heavily summarized" annotation.
+   * Default 0.5.
+   */
+  compressionRatioHigh: number
 }
 
 export interface ChecksConfig {
@@ -135,6 +157,9 @@ export const Config = z.object({
     economyRoundFloor: z.number().min(0).default(10).volatile(),
     messageCountProxy: z.number().min(0).default(800).volatile(),
     messageCountWindowRatio: z.number().min(0).max(1).default(0.002).volatile(),
+    // 压缩比例只驱动**标注强度**、不参与 severity 阶梯（理由见 ThresholdsConfig 注释）。
+    compressionRatioMid: z.number().min(0).max(1).default(0.3).volatile(),
+    compressionRatioHigh: z.number().min(0).max(1).default(0.5).volatile(),
   }),
   checks: z.object({
     git: z.object({
@@ -203,6 +228,13 @@ export function validateThresholdLadder(value: ResolvedConfig): void {
       `阈值必须单调递增：windowMid(${t.windowMid}) < windowHigh(${t.windowHigh}) < windowCritical(${t.windowCritical})`,
     )
   }
+  // 压缩比例两档同样要求单调（mid < high）：它们只决定标注强度，
+  // 但「轻档阈值 ≥ 重档阈值」会让重档永远不触发 ⇒ 配置无意义。
+  if (!(t.compressionRatioMid < t.compressionRatioHigh)) {
+    throw new Error(
+      `阈值必须单调递增：compressionRatioMid(${t.compressionRatioMid}) < compressionRatioHigh(${t.compressionRatioHigh})`,
+    )
+  }
 }
 
 /**
@@ -223,6 +255,8 @@ export function validateConfig(value: ResolvedConfig): void {
     ['thresholds.economyRoundFloor', value.thresholds.economyRoundFloor],
     ['thresholds.messageCountProxy', value.thresholds.messageCountProxy],
     ['thresholds.messageCountWindowRatio', value.thresholds.messageCountWindowRatio],
+    ['thresholds.compressionRatioMid', value.thresholds.compressionRatioMid],
+    ['thresholds.compressionRatioHigh', value.thresholds.compressionRatioHigh],
     ['cost.cacheHitDiscount', value.cost.cacheHitDiscount],
     ['cost.inputPricePerM', value.cost.inputPricePerM],
     ['cost.priceRefreshHours', value.cost.priceRefreshHours],
@@ -264,6 +298,8 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     economyRoundFloor: live(config.thresholds?.economyRoundFloor) ?? 10,
     messageCountProxy: live(config.thresholds?.messageCountProxy) ?? 800,
     messageCountWindowRatio: live(config.thresholds?.messageCountWindowRatio) ?? 0.002,
+    compressionRatioMid: live(config.thresholds?.compressionRatioMid) ?? 0.3,
+    compressionRatioHigh: live(config.thresholds?.compressionRatioHigh) ?? 0.5,
   }
   // 这里的 `?? X` 兜底必须与上方 Config schema 的 `.default(X)` **逐项一致**。
   // 两份真源只改一边，schema 的新默认值就会被这里的旧字面量盖掉——而且不会有

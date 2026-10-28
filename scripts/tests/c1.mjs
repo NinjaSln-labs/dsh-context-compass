@@ -20,6 +20,19 @@ export async function run() {
     )
   })
 
+  await check('C1: validateThresholdLadder——压缩比例两档也须单调（t000036）', () => {
+    validateThresholdLadder(resolveConfig({})) // 默认 0.3/0.5：通过
+    // mid ≥ high ⇒ 重档永远不触发 ⇒ 配置无意义，必须拒。
+    assert.throws(
+      () => validateThresholdLadder(resolveConfig({ thresholds: { compressionRatioMid: 0.5, compressionRatioHigh: 0.5 } })),
+      /单调递增/,
+    )
+    assert.throws(
+      () => validateThresholdLadder(resolveConfig({ thresholds: { compressionRatioMid: 0.6, compressionRatioHigh: 0.5 } })),
+      /单调递增/,
+    )
+  })
+
   await check('C1 默认值：git / sessionResume / knowledge 三项默认关', () => {
     // 2026-10-01 用户裁定：这三项会主动探测宿主外部状态（工作区、上次会话、
     // 知识库），不该在用户没要求时就跑。默认关、要用显式开。

@@ -129,4 +129,66 @@ export async function run() {
     assert.deepEqual(refreshAnyCalls[0], ['https://a.test/p.json', 'https://b.test/p.json'])
     assert.equal(capturedDelay, 7 * 3_600_000) // priceRefreshHours → 刷新周期
   })
+
+  // ── t000036：压缩比例参与标注（**不参与 severity 阶梯**）────────────────
+  await check('S3: 压缩比例只标注、不移 severity 档（t000036）', () => {
+    // 压缩比例高**不改档位**：压缩后上下文变小 ⇒ 容量维反而转绿，
+    // 升档会与容量信号自相矛盾；且压缩比例高常是容量压力的**结果**，
+    // 独立计分＝同一事实算两次。
+    const compressed = {
+      turns: 1, userMessages: 0, assistantMessages: 0, compactions: 1,
+      // 压缩后压力很小 ⇒ 占用极低（容量维 green）
+      pressureTokens: 50_000, contextWindow: 1_000_000, compressionRatio: 0.8,
+    }
+    const v = healthView(compressed, config)
+    assert.equal(v.severity, 'green', '压缩比例 0.8 不得把档位抬上去')
+    assert.equal(v.compressionRatio, 0.8)
+    // 档位不变，但标注更响：≥high → 「已大量摘要化」
+    assert.ok(v.advice.includes('已大量摘要化'), v.advice)
+    assert.ok(v.advice.includes('需复核'), v.advice)
+    // 对照：同样的压缩比例但没有该信号 ⇒ 档位与标注都不该变
+    const noCompaction = healthView({ ...compressed, compressionRatio: null }, config)
+    assert.equal(noCompaction.severity, 'green')
+    assert.ok(!noCompaction.advice.includes('摘要化'))
+  })
+
+  await check('S3: 压缩比例标注分三档，阈值可配（compressionRatioMid/High）', () => {
+    const base = {
+      turns: 1, userMessages: 0, assistantMessages: 0, compactions: 1,
+      pressureTokens: 50_000, contextWindow: 1_000_000,
+    }
+    // 低档（< mid）：只报数字，不加措辞。
+    const low = healthView({ ...base, compressionRatio: 0.1 }, config)
+    assert.ok(low.advice.includes('上次压缩比例 ≈ 10%'), low.advice)
+    assert.ok(!low.advice.includes('摘要化'), low.advice)
+    // 中档（≥ mid）：「部分摘要化」
+    const mid = healthView({ ...base, compressionRatio: 0.35 }, config)
+    assert.ok(mid.advice.includes('早期细节部分摘要化'), mid.advice)
+    // 重档（≥ high）：「已大量摘要化」
+    const high = healthView({ ...base, compressionRatio: 0.6 }, config)
+    assert.ok(high.advice.includes('早期细节已大量摘要化'), high.advice)
+    // 阈值可配：把 mid 抬到 0.4 ⇒ 0.35 掉回低档
+    const shifted = healthView({ ...base, compressionRatio: 0.35 }, resolveConfig({ thresholds: { compressionRatioMid: 0.4, compressionRatioHigh: 0.5 } }))
+    assert.ok(!shifted.advice.includes('摘要化'), shifted.advice)
+    // 把 high 压到 0.3（mid 0.2）⇒ 0.35 落进重档
+    const stricter = healthView({ ...base, compressionRatio: 0.35 }, resolveConfig({ thresholds: { compressionRatioMid: 0.2, compressionRatioHigh: 0.3 } }))
+    assert.ok(stricter.advice.includes('已大量摘要化'), stricter.advice)
+  })
+
+  await check('S3: 压缩比例标注在所有档位都出现，且不掩盖档位理由', () => {
+    // 标注是「附带信息」：档位自己的理由必须在（容量/经济/消息数），
+    // 压缩比例的措辞不能把它顶掉。
+    const yellowByCapacity = {
+      turns: 1, userMessages: 0, assistantMessages: 0, compactions: 1,
+      pressureTokens: 600_000, contextWindow: 1_000_000, compressionRatio: 0.9,
+    }
+    const y = healthView(yellowByCapacity, config)
+    assert.equal(y.severity, 'yellow')
+    assert.ok(y.advice.includes('上下文已占窗口 60%'), y.advice)
+    assert.ok(y.advice.includes('已大量摘要化'), y.advice)
+    // 无压缩信号 ⇒ 不出现任何压缩措辞
+    const none = healthView({ ...yellowByCapacity, compressionRatio: null }, config)
+    assert.equal(none.severity, 'yellow')
+    assert.ok(!none.advice.includes('摘要化'), none.advice)
+  })
 }
