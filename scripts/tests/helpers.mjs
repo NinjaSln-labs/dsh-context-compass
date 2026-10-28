@@ -193,13 +193,21 @@ export const OFFICIAL_DOC = {
   source: 'https://api-docs.deepseek.com/quick_start/pricing/',
   peakHours: [[9, 12], [14, 18]],
   models: {
+    // 官方当前价格（2026-10-28 同步自 api-docs.deepseek.com 中英文两页）：
+    // Flash 忙时 ¥2/M、命中 ¥0.04/M、$0.3/M、$0.006/M；闲时减半。
+    // ⚠ 这份 fixture 必须与 pricing/deepseek.json 同源——它是「官方文档」的替身，
+    // 值本身对不对不影响被测逻辑，但**不能是过期价**（否则测试在验一个不存在的世界）。
+    'deepseek-flash': {
+      peak: { inputMissPerMCny: 2.0, inputHitPerMCny: 0.04, inputMissPerMUsd: 0.30, inputHitPerMUsd: 0.006 },
+      offpeak: { inputMissPerMCny: 1.0, inputHitPerMCny: 0.02, inputMissPerMUsd: 0.15, inputHitPerMUsd: 0.003 },
+    },
     'deepseek-v4-flash': {
-      peak: { inputMissPerMCny: 3.0, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 },
-      offpeak: { inputMissPerMCny: 1.5, inputHitPerMCny: 0.05, inputMissPerMUsd: 0.22, inputHitPerMUsd: 0.007 },
+      peak: { inputMissPerMCny: 2.0, inputHitPerMCny: 0.04, inputMissPerMUsd: 0.30, inputHitPerMUsd: 0.006 },
+      offpeak: { inputMissPerMCny: 1.0, inputHitPerMCny: 0.02, inputMissPerMUsd: 0.15, inputHitPerMUsd: 0.003 },
     },
     '*': {
-      peak: { inputMissPerMCny: 3.0, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 },
-      offpeak: { inputMissPerMCny: 1.5, inputHitPerMCny: 0.05, inputMissPerMUsd: 0.22, inputHitPerMUsd: 0.007 },
+      peak: { inputMissPerMCny: 2.0, inputHitPerMCny: 0.04, inputMissPerMUsd: 0.30, inputHitPerMUsd: 0.006 },
+      offpeak: { inputMissPerMCny: 1.0, inputHitPerMCny: 0.02, inputMissPerMUsd: 0.15, inputHitPerMUsd: 0.003 },
     },
   },
 }

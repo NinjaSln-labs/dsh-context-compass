@@ -36,22 +36,22 @@ export async function run() {
     Date.now = () => Date.parse('2026-08-14T01:00:00Z')
     try {
       const p = cache.get('deepseek-v4-flash')
-      assert.equal(p.missPerMCny, 3.0)
-      assert.equal(p.hitPerMCny, 0.10)
-      assert.equal(p.missPerMUsd, 0.44)
-      assert.equal(p.hitPerMUsd, 0.014)
+      assert.equal(p.missPerMCny, 2.0)
+      assert.equal(p.hitPerMCny, 0.04)
+      assert.equal(p.missPerMUsd, 0.30)
+      assert.equal(p.hitPerMUsd, 0.006)
       assert.equal(p.period, 'peak')
     } finally { Date.now = origNow }
     // Off-peak: 2026-08-14T10:00Z
     Date.now = () => Date.parse('2026-08-14T10:00:00Z')
     try {
       const p = cache.get('deepseek-v4-flash')
-      assert.equal(p.missPerMCny, 1.5)
-      assert.equal(p.hitPerMCny, 0.05)
-      assert.equal(p.missPerMUsd, 0.22)
+      assert.equal(p.missPerMCny, 1.0)
+      assert.equal(p.hitPerMCny, 0.02)
+      assert.equal(p.missPerMUsd, 0.15)
       assert.equal(p.period, 'offpeak')
       // unknown model falls back to "*"
-      assert.equal(cache.get('some-other-model').missPerMCny, 1.5)
+      assert.equal(cache.get('some-other-model').missPerMCny, 1.0)
     } finally { Date.now = origNow }
   })
 
@@ -66,7 +66,7 @@ export async function run() {
     const origNow = Date.now
     Date.now = () => Date.parse('2026-08-14T10:00:00Z')
     try {
-      assert.equal(cache.get().missPerMCny, 1.5) // last good document survives
+      assert.equal(cache.get().missPerMCny, 1.0) // last good document survives
     } finally { Date.now = origNow }
   })
 
@@ -98,11 +98,11 @@ export async function run() {
       await cache.refreshAny(['https://primary', 'https://fallback'], url => (url.includes('fallback') ? ok() : fail())),
       true,
     )
-    // Same off-peak pin as above (peak hours would bill 3.0, not 1.5).
+    // Same off-peak pin as above (peak hours would bill 2.0, not 1.0).
     const origNow = Date.now
     Date.now = () => Date.parse('2026-08-14T10:00:00Z')
     try {
-      assert.equal(cache.get('deepseek-v4-flash').missPerMCny, 1.5) // fallback doc won
+      assert.equal(cache.get('deepseek-v4-flash').missPerMCny, 1.0) // fallback doc won
     } finally { Date.now = origNow }
   })
 
@@ -111,8 +111,8 @@ export async function run() {
     for (const bad of [
       { peakHours: [], models: { '*': OFFICIAL_DOC.models['*'] } },
       { peakHours: [[9, 12]], models: {} },
-      { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: -1, inputHitPerMCny: 0.1, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
-      { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: 1, inputHitPerMCny: 0.1 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
+      { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: -1, inputHitPerMCny: 0.04, inputMissPerMUsd: 0.30, inputHitPerMUsd: 0.006 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
+      { peakHours: [[9, 12]], models: { '*': { peak: { inputMissPerMCny: 1, inputHitPerMCny: 0.02 }, offpeak: OFFICIAL_DOC.models['*'].offpeak } } },
     ]) {
       const fetchImpl = async () => ({ ok: true, json: async () => bad })
       assert.equal(await cache.refresh('https://x', fetchImpl), false, JSON.stringify(bad))
@@ -133,9 +133,9 @@ export async function run() {
     await cache.refresh('https://x', ok)
     assert.equal(await cache.refresh('https://x', abort, 10_000, () => {}), false)
     const origNow = Date.now
-    Date.now = () => Date.parse('2026-08-14T10:00:00Z') // pin Beijing off-peak → 1.5
+    Date.now = () => Date.parse('2026-08-14T10:00:00Z') // pin Beijing off-peak → 1.0
     try {
-      assert.equal(cache.get('deepseek-v4-flash').missPerMCny, 1.5) // last good doc intact
+      assert.equal(cache.get('deepseek-v4-flash').missPerMCny, 1.0) // last good doc intact
     } finally { Date.now = origNow }
   })
 
@@ -162,14 +162,15 @@ export async function run() {
       pressureTokens: 550_000, contextWindow: 1_000_000,
       lastUsage: { inputTokens: 50_000, cacheReadTokens: 500_000, cacheWriteTokens: 0 },
     }
-    // off-peak v4-flash: CNY miss 1.5 / hit 0.05, USD miss 0.22 / hit 0.007
-    // → discount 0.007/0.22 = 1/31.4; billable = 50K + 500K × (0.007/0.22)
-    const price = { missPerMUsd: 0.22, hitPerMUsd: 0.007, missPerMCny: 1.5, hitPerMCny: 0.05, period: 'offpeak' }
+    // off-peak Flash: CNY miss 1 / hit 0.02, USD miss 0.15 / hit 0.003
+    // → discount 0.003/0.15 = 1/50; billable = 50K + 500K × (0.003/0.15)
+    // （这组数是**独立取值**的：验的是金额换算的自洽性，不必等于官方当前价）
+    const price = { missPerMUsd: 0.15, hitPerMUsd: 0.003, missPerMCny: 1.0, hitPerMCny: 0.02, period: 'offpeak' }
     const v = healthView(state3, config, price)
-    const billable = 50_000 + 500_000 * (0.007 / 0.22)
+    const billable = 50_000 + 500_000 * (0.003 / 0.15)
     assert.ok(Math.abs(v.effectivePerRound - billable) < 1e-6)
-    assert.ok(Math.abs(v.effectivePerRoundCny - (billable * 1.5) / 1e6) < 1e-9) // ¥0.10/轮
-    assert.ok(Math.abs(v.effectivePerRoundUsd - (billable * 0.22) / 1e6) < 1e-9) // $0.015/轮
+    assert.ok(Math.abs(v.effectivePerRoundCny - (billable * 1.0) / 1e6) < 1e-9) // ¥0.07/轮
+    assert.ok(Math.abs(v.effectivePerRoundUsd - (billable * 0.15) / 1e6) < 1e-9) // $0.010/轮
     assert.equal(v.pricePeriod, 'offpeak')
   })
 
