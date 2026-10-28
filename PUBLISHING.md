@@ -6,7 +6,7 @@
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.13.2`（latest，OIDC 发布，带 provenance）——0.13.2 定价文档自动同步（R3）+ 修 jsdelivr 分支缓存致陈旧价永远赢；0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
+| npm | ✅ `dsh-context-compass@0.13.3`（latest，OIDC 发布，带 provenance）——0.13.3 移除已退役 session-health 技能的来源引用；0.13.2 定价文档自动同步（R3）+ 修 jsdelivr 分支缓存致陈旧价永远赢；0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
 | 本地验证 | ✅ file: 安装（未发版期间按部署纪律）+ 重启 profile 实测：门禁七步全绿、contract-check 5/5、visual 8/8（0.13.1，2026-10-01） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
@@ -30,6 +30,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.13.3** — **移除已退役 session-health 技能的来源引用**（2026-10-28，tag → `context-compass-v0.13.3`）：社区 session-health 技能已在 `agent-skills/retired.txt` 退役（不再供安装），本仓方法论不再挂靠它。README/README.en 的「方法论源自该技能」改为直接描述判定模型（容量 + 经济 + 质量 + 消息数四维取最严信号，数据层全部精确测量）；`docs/DESIGN.md` 的来源行改写、信号对比表两列（「技能在 Cursor vs 本插件」）改为「信号 → 来源」表；`src/config.ts` / `src/projection.ts` 注释去掉 skill 指代。**无行为变更**（`src/` 实质代码改动 0 行），发版动因：README 在 npm 包内（`files` 字段含 README.md／README.en.md），不发布则已上架的 README 仍写着已退役的来源；且 `lib/*.d.ts` 带注释，本地 lib 与 registry 副本不一致会让 `check:deploy` 只能靠 `file:` 安装才绿。附带：R4（技能阈值回写）核实为**不成立**——插件侧 schema 默认值与技能判定表逐项一致且自诞生起未分叉，该协作无对端（技能已退役），已 close；技能判表里「压缩比例 30%/50% 两档」在插件中只作展示不参与 severity，另立条目跟进
 
 - **0.13.2** — **定价文档自动同步（R3 / C4）+ 修陈旧价永远赢**（2026-10-28，tag → `context-compass-v0.13.2`）：①**定价文档从人工手抄改为机器同步**——新增 `scripts/sync-pricing.mjs` 抓官方中英文两页定价表（CNY 取中文页、USD 取英文页，官方分别定价、无需汇率换算），**交叉校验 peak 时段**（英文页 UTC 换算须等于中文页北京时间），逐字段比对后改写；官方页改版导致解析不出时**抛错退出（rc=2）且文件保持原样**，不产出静默降级的定价。新增 `.github/workflows/sync-pricing.yml`：每日定时对比，有漂移则开 PR（不推 main，人审后合），**不需要任何 secret**；开 PR 路径已实机验证（真实推分支 + 真实建 PR + 关闭清理）。②**首次同步即发现官方 Flash 已降价**（忙时 ¥2/M·$0.30/M、闲时 ¥1/M·$0.15/M），仓内手抄价是旧的（¥3/M·$0.44/M / ¥1.5/M·$0.22/M）⇒ **金额显示此前一直偏高约三分之一**，已修正；并补官方注(1)声明的 `deepseek-flash` 与 `deepseek-v4-flash-vision-exp` 两个旧名别名（按 Flash 价计费）。③**顺带查出的真 bug：CDN 分支缓存让陈旧价永远赢**——主源 `priceUrl` 原指向 jsdelivr 的 `@main`，而 jsdelivr 对 GitHub **分支引用**走永久存储 + 分支缓存（实测改价后 **7 小时**仍返回旧文档，`edge age`≈25000s / `s-maxage=43200`）；旧式「第一个成功就赢」⇒ 陈旧镜像永远赢 ⇒ 金额停在旧价且**无任何报错**。修两处：主源改 `@latest`（实测实时）、`refreshAny` 改为**多源全取、挑 `updatedAt` 最新的那份**。测试：新增 9 组同步器用例 + 3 组多源择优用例。⚠ 这两个 URL 是**运行时**的、不在 npm 包里 ⇒ 改了必须发版才生效
 
