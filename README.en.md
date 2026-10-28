@@ -80,10 +80,10 @@ cost: {
 
 ## Pricing (money display)
 
-The harness carries no price data; money display resolves through a live cache fed by the **official DeepSeek pricing document** (default `priceUrl` = jsdelivr CDN mirror, `priceFallbackUrl` = GitHub raw, same-cycle fallback; the document is the repo-maintained [`pricing/deepseek.json`](pricing/deepseek.json), kept in sync with [api-docs.deepseek.com](https://api-docs.deepseek.com/quick_start/pricing/)). When the primary source is unreachable (some networks block GitHub raw) it falls back automatically instead of degrading the money display to static USD.
+The harness carries no price data; money display resolves through a live cache fed by the **official DeepSeek pricing document** (default `priceUrl` = jsdelivr CDN mirror, `priceFallbackUrl` = GitHub raw, same-cycle fallback; the document is the repo-maintained [`pricing/deepseek.json`](pricing/deepseek.json), **auto-synced** from [api-docs.deepseek.com](https://api-docs.deepseek.com/quick_start/pricing/) by `scripts/sync-pricing.mjs` — a scheduled CI job compares the official CNY and USD tables and opens a PR on drift). When the primary source is unreachable (some networks block GitHub raw) it falls back automatically instead of degrading the money display to static USD.
 
 - **Peak/valley**: each read picks the period by **Beijing time** — peak 9:00–12:00 / 14:00–18:00 (the English page writes UTC 01–04 / 06–10), off-peak half price; the badge marks `忙时价/闲时价`.
-- **Per model**: priced by the current model name (`models."*"` fallback). **Both official currencies** — CNY from the Chinese page, **USD taken directly from the English page** (no FX conversion): v4-flash off-peak miss ¥1.5/M / $0.22/M, hit ¥0.05/M / $0.007/M; peak ¥3.0/M / $0.44/M, ¥0.10/M / $0.014/M.
+- **Per model**: priced by the current model name (`models."*"` fallback). **Both official currencies** — CNY from the Chinese page, **USD taken directly from the English page** (no FX conversion). Current values (2026-10-28): flash off-peak miss ¥1/M / $0.15/M, hit ¥0.02/M / $0.003/M; peak ¥2/M / $0.30/M, ¥0.04/M / $0.006/M.
 - **Currency by region**: CNY when the app UI is zh, USD otherwise; `/compass` shows both.
 - Refreshed every `priceRefreshHours` (default 24h); failures keep the last good document; before the first success (or with `priceSource: 'static'`) the static `inputPricePerM` / `cacheHitDiscount` apply (flat USD, no periods).
 

@@ -4,6 +4,16 @@
 
 ## 已交付（到 v0.11.0）
 
+### R3 定价同步自动化（C4）· 2026-10-28
+
+- **定价文档从人工手抄改为机器同步** — `scripts/sync-pricing.mjs` 抓官方中英文两页（CNY 来自中文页、USD 来自英文页，官方分别定价、无需汇率换算），解析表格 → **两页 peak 时段交叉校验**（英文页 UTC 换算 +8h 须等于中文页北京时间）→ 组装 → 与 `pricing/deepseek.json` 逐字段比对 → 差异时改写。任一环节失败**抛错退出（rc=2）且文件保持原样**——绝不产出「看起来合法但其实静默降级」的定价
+- **CI 定时 job** — `.github/workflows/sync-pricing.yml`：每日 03:17 UTC 跑对比，有漂移则改写并**开 PR**（不推 main，发布决策永远是人做的）；`pricing/deepseek.json` / 脚本本身变更时也跑（`--check` 模式，有漂移即红，防手改绕过同步器）。**不需要任何 secret**（只读官方页 + 内置 GITHUB_TOKEN 开 PR）。开 PR 路径已实机验证过（真实推分支 + 真实建 PR，随后关闭清理）
+- **输出可 diff** — 序列化固定格式（`peakHours` 单行、数字保留一位小数）⇒ 价格没变则文件**逐字节不变**，评审时 diff 里只有真正变的数字
+- **官方旧模型名按 Flash 价计费** — 脚注(1) 明示 `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp` 仍可调用但按 Flash 价计费 ⇒ 同步器自动把这两个别名与 `*` 兜底都指向 Flash 价（此前 `deepseek-v4-flash` 价还是旧的）
+- **顺带修正的过期价** — 首次同步即发现官方 Flash 已降价（忙时 ¥2/M·$0.30/M、闲时 ¥1/M·$0.15/M），仓内手抄价是旧的（¥3/M·$0.44/M / ¥1.5/M·$0.22/M）⇒ 金额显示此前一直偏高约 33%
+- **测试** — `scripts/tests/sync-pricing.mjs` 9 组：两页表格解析 / peak 时段两页一致 / 别名提取 / 组装自洽（闲时=高峰一半）/ diff 覆盖每处漂移 / **页面结构变化时抛错** / 序列化稳定 / 库内文件满足**插件自己的** `validDocument`（用 `PriceCache.refresh` 真跑一遍——写出来的东西运行时必须认得）
+
+
 ### 第一波（插件侧，无核心依赖）
 
 - **CI 自动发布** — tag `context-compass-v*` 触发 → 验证链（build/smoke/mount/client-mount + 版本守卫）→ environment `npm-publish` 人工审批 → `npm publish`
@@ -89,9 +99,8 @@
 > 主线目标：**发布稳定、不影响体验**。顺序原则：稳定性基建 > 零风险功能 > 需兼容测试的功能 > 需先调研设计的大项。
 > 完成一项 → 从本节删除，交付状态回写「已交付」段并标注落地版本；**交接侧同步**（只经 `handoff add/close`，见下「维护规则」）。
 > 已无待做：稳定性基建 S0–S4 全部交付（见「已交付」0.10.0 段）；配置点接入 C1（0.10.0）/ C2（0.12.0）/ R1 sparkline（0.9.0）均已交付。
-> 未决 R3/R4 为 P2，R5/R6 为 P3。
+> 未决 R4 为 P2，R5/R6 为 P3。
 
-- [ ] **R3 定价同步自动化（C4）· P2** — `pricing/deepseek.json` 手动同步 → CI 定时对比官方、变更开 PR（依赖：GitHub Actions 定时 job）
 - [ ] **R4 session-health 技能阈值回写（D1）· P2** — 插件阈值与技能默认参数已分叉，需对齐（依赖：技能侧配合）
 - [ ] **R5 轮次语义细化（A5）· P3** — 区分多工具调用的回合：「轮次 X / 步数 Y」（依赖：投影加 step 计数）
 - [ ] **R6 多币种 / 实时汇率 · P3** — 收益低、外部依赖脆，暂缓（依赖：外部汇率源）
@@ -112,7 +121,7 @@
 | **0.12.0** | **C2 client 配置卡片（已交付）**——`settingsScope` 通道（官方 client inject + bind，多段 path mutate + revision fence），22 字段全量（阈值 8 / 检查项 7 / 投影 1 / 计费 6），草稿暂存 + parseField 范围校验 + thresholdError 单调性，可访问性 aria，官方壳样式对齐；13 组 card-form 纯逻辑单测 |
 | **0.12.1** | **C2 卡片遗留项收口（已交付）**——discard 逃生通道 / controlFor 渲染单一来源 / focus token 修复 / restartNote pill；client-mount +1 组断言 |
 | **0.12.2** | **升级体检 + 冷路径契约修复（已交付）**——dsh 0.1.5-rc.1 体检全绿；冷会话检查点健康读自 0.11.1 起静默失效（旧契约调用必抛 TypeError 被吞），改同步零 I/O 检查点读 + 删异步脚手架 + stub 契约形状纠正 |
-| **后续** | R3 / R4 / R5 / R6 · B1 / B2（等依赖就绪）|
+| **后续** | R4 / R5 / R6 · B1 / B2（等依赖就绪）|
 
 ## 维护规则
 

@@ -165,6 +165,9 @@ git config core.hooksPath .githooks
 | **`identityMatches` 要求 formatVersion 严格相等** | 修复上线后旧检查点仍读不到（不是 bug）：宿主刻意让「缺 formatVersion」的记录**永不相认**（缺格式代次无法证明折叠语义，其标题走 `cachedPredecessorTitle` 兜底）。当前 `SESSION_FORMAT_VERSION = 3` | 排查「检查点读不到」时先看 `record.identity.formatVersion` 是否存在且等于当前格式版本，再怀疑插件 |
 | 视觉门禁：主题竞态 | `panel light` 拍到深色图（比基线失败），但手动点「浅色」是有效的——`setTheme` 在 shell 挂载前读 `body[data-ds-dark-theme]`，读到默认值就误判「已是目标态」提前 return，之后应用才施加持久化主题 | `gotoApp()` 等 shell 就绪；`setTheme` 在切换后**断言目标态真的落定**（不一致直接抛错，不再拍错主题的图去比基线） |
 | 视觉门禁：侧栏 markup 随宿主版本变 | badge spec 找不到会话 → `div[class*="sessionRow"]` 为空。0.1.5-rc.1 侧栏默认按工作区分组：会话折叠在 `div.projectRow` 下，需先展开 | `visual/helpers.mjs#revealSessionEntry()` 兼容两种形态（扁平 `sessionRow` / 分组树先展开 `projectRow`）——**宿主侧栏改版时先改这里**，别去改插件 |
+| **定价文档是人工手抄的** | 官方改价后仓内 `pricing/deepseek.json` 一直是旧价 ⇒ 金额显示按过期价算（2026-10 首跑同步器时发现 Flash 忙时 ¥3/M·$0.44/M，实际已降到 ¥2/M·$0.30/M ⇒ 一直偏高约 33%） | `scripts/sync-pricing.mjs`（R3）：抓官方中英文两页 → 两页 peak 时段交叉校验 → 逐字段比对 → 改写。`node scripts/sync-pricing.mjs` 看差异 / `--write` 改写 / `--check` 只判不改。**CI 定时 job 每日跑，有漂移即开 PR**（不推 main，人审后合）。**别再手抄价格** |
+| 官方定价页改版（表格结构变了） | 同步器解析不出表/列/价格 ⇒ 抛错退出（rc=2），`pricing/deepseek.json` **保持原样**（不做任何降级改写） | 报错会指名缺什么（`找不到模型表头行` / `两页 peak 时段换算后不一致` / `中文页未找到价格表`）——照报错改 `scripts/sync-pricing.mjs` 的解析器。⚠ 官方页 URL **必须带尾斜杠**（无斜杠会 302 到「首次调用 API」页，页面上没有价格表） |
+| GitHub Actions 的 `gh pr create` **不会替你推分支** | PR 建不出来，或报「head 分支不存在」 | 顺序必须是 **先 `git push` 分支、再 `gh pr create --head <branch>`**（2026-10 实测踩过）。且 job 需要 `contents: write`（只给 `pull-requests: write` 推不动分支）。⚠ 收尾**别删分支**——删分支会连带把人要审的 PR 关掉；临时分支交给仓库设置「合并后自动删 head 分支」 |
 
 ## 维护
 

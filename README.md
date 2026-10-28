@@ -83,20 +83,25 @@ cost: {
 harness 不携带价格数据，金额显示通过实时缓存解析，数据源为**官方 DeepSeek 定价文档**
 （默认 `priceUrl` = jsdelivr CDN 镜像，`priceFallbackUrl` = GitHub raw 同轮回退；
 文档即本仓库维护的 [`pricing/deepseek.json`](pricing/deepseek.json)，
-与 [api-docs.deepseek.com](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/) 同步）。
+由 `scripts/sync-pricing.mjs` 从 [api-docs.deepseek.com](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
+**自动同步**——CI 定时抓官方中英文两页对比，有漂移即开 PR，人审后合并）。
 主源不可达时（如部分网络屏蔽 GitHub raw）自动回退，避免金额显示降级为静态 USD。
 
 - **峰谷定价**：每次读取按**北京时间**判定时段——高峰 9:00–12:00 / 14:00–18:00
   （英文页写作 UTC 01–04 / 06–10），其余闲时半价；badge 标注 `忙时价/闲时价`。
 - **按模型**：按当前模型名取价（`models."*"` 兜底）。**双官方币种**——CNY 来自中文页，
-  **USD 直接取自英文页官方价**（无汇率换算）：v4-flash 闲时 未命中 ¥1.5/M / $0.22/M、
-  命中 ¥0.05/M / $0.007/M；忙时 ¥3.0/M / $0.44/M、¥0.10/M / $0.014/M。
+  **USD 直接取自英文页官方价**（无汇率换算）。当前值（2026-10-28）：flash 闲时
+  未命中 ¥1/M / $0.15/M、命中 ¥0.02/M / $0.003/M；忙时 ¥2/M / $0.30/M、
+  ¥0.04/M / $0.006/M。**别手抄这些数字**——改价由同步器开 PR 改。
 - **按地区选币种**：应用界面为 zh 时显示 CNY，否则 USD；`/compass` 双币并列。
 - 每 `priceRefreshHours`（默认 24h）刷新；失败保留上次有效文档；首次成功前（或
   `priceSource: 'static'` 时）用静态 `inputPricePerM` / `cacheHitDiscount`（平价 USD，无时段）。
 
 文档格式（每个时段双币必填）：
-`{ "peakHours": [[9,12],[14,18]], "models": { "<模型名>": { "peak": { "inputMissPerMCny": 3.0, "inputHitPerMCny": 0.10, "inputMissPerMUsd": 0.44, "inputHitPerMUsd": 0.014 }, "offpeak": { ... } }, "*": { ... } } }`
+`{ "peakHours": [[9,12],[14,18]], "models": { "<模型名>": { "peak": { "inputMissPerMCny": 2.0, "inputHitPerMCny": 0.04, "inputMissPerMUsd": 0.30, "inputHitPerMUsd": 0.006 }, "offpeak": { ... } }, "*": { ... } } }`
+
+> 手工同步（仅在 CI 不可用时）：`node scripts/sync-pricing.mjs` 看差异，
+> `--write` 改写、`--check` 只判不改（有漂移即非零退出）。
 
 ## 为什么用真实数据
 
