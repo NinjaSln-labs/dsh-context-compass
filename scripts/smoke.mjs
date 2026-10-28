@@ -28,6 +28,7 @@ import * as s2 from './tests/s2.mjs'
 import * as r1 from './tests/r1.mjs'
 import * as s3 from './tests/s3.mjs'
 import * as c1 from './tests/c1.mjs'
+import * as syncPricing from './tests/sync-pricing.mjs'
 
 await util.run()
 await projection.run()
@@ -43,6 +44,7 @@ await s2.run()
 await r1.run() // R1 ran between S2 and S3 in the monolith
 await s3.run()
 await c1.run()
+await syncPricing.run() // 定价同步器（R3）：解析器 + 库内 pricing/deepseek.json 契约
 
 if (results.failures > 0) {
   console.error(`\n${results.failures} check(s) FAILED`)

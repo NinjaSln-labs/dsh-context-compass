@@ -1,0 +1,125 @@
+# dsh-context-compass 定价同步（R3 / C4）
+#
+# 做的事：`pricing/deepseek.json`（插件运行时金额显示的唯一数据源）从「人工手抄」
+# 变成「机器抓官方页 → 比对 → 变更开 PR」。
+#
+# 触发：
+# - schedule：每日一次（官方页不公布改价时刻，每日足够；真要更勤可用 workflow_dispatch）
+# - workflow_dispatch：手动触发（改价后想立刻同步）
+# - push / PR 打到 pricing/deepseek.json：跑 **--check** 模式（有漂移即红），
+#   防止手改定价文件绕过同步器
+#
+# 安全模型：
+# - 只读官方页 + 只写本仓 → **不需要任何 secret**，也不需要 npm token
+# - 开 PR 用内置 GITHUB_TOKEN（contents: write + pull-requests: write），
+#   且**不推 main**（改动只经 PR 走人审）——发布决策永远是人做的
+# - 官方页抓取/解析失败 ⇒ job 红，**定价文件保持原样**（不做任何降级改写）
+name: sync-pricing
+
+on:
+  schedule:
+    # 每日 03:17 UTC（北京 11:17）——避开整点，减少与官方发布窗口撞车
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  push:
+    paths: ['pricing/deepseek.json', 'scripts/sync-pricing.mjs', '.github/workflows/sync-pricing.yml']
+  pull_request:
+    paths: ['pricing/deepseek.json', 'scripts/sync-pricing.mjs', '.github/workflows/sync-pricing.yml']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-pricing-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: 对比官方定价
+    runs-on: ubuntu-latest
+    permissions:
+      # contents: write —— **要推分支**（gh pr create 不会替你推）。
+      # 凭据是内置 GITHUB_TOKEN，作用域限于本仓；只推 `pricing-sync-*` 分支、**不推 main**。
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Compare with official pricing page
+        id: compare
+        run: |
+          # 退出码契约（scripts/sync-pricing.mjs）：
+          #   0 = 与官方一致
+          #   1 = 有差异（--check 模式）
+          #   2 = 抓取/解析失败（定价文件未被改动）
+          set +e
+          node scripts/sync-pricing.mjs --check
+          rc=$?
+          set -e
+          case "$rc" in
+            0)
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+              echo "定价与官方一致，无需改动。"
+              ;;
+            1)
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "::notice::定价已与官方脱节 ⇒ 将开 PR 同步。"
+              ;;
+            *)
+              echo "::error::抓取或解析失败（退出码 $rc）——定价文件未被改动。"
+              exit "$rc"
+              ;;
+          esac
+      - name: Update pricing file and open PR
+        if: steps.compare.outputs.changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          node scripts/sync-pricing.mjs --write
+          if [ -z "$(git status --porcelain pricing/deepseek.json)" ]; then
+            echo "写盘后无差异（官方页在抓取期间变了）——跳过 PR。"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pricing/deepseek.json
+          git commit -m "chore(pricing): 同步官方 DeepSeek 定价文档
+
+          自动同步：抓取 api-docs.deepseek.com 中英文定价页（CNY 取中文页、USD 取英文页），
+          交叉校验 peak 时段后改写 pricing/deepseek.json。"
+
+          branch="pricing-sync-${GITHUB_RUN_ID}"
+          title="chore(pricing): 同步官方 DeepSeek 定价文档"
+
+          # 幂等：同标题的 open PR 已存在就不重复开（PR 创建本身也可能与并发 run 撞车）
+          existing="$(gh pr list --state open --search "$title in:title" --json number --jq 'length')"
+          if [ "$existing" != "0" ]; then
+            echo "已有同标题的 open PR —— 不重复创建。"
+            exit 0
+          fi
+
+          # 先推分支：**PR 必须指向远端已存在的分支**（gh pr create 不会替你推）。
+          # 推送失败（同名分支已存在等）⇒ 换名重试一次，仍失败就红（不静默跳过）。
+          if ! git push --set-upstream origin "HEAD:refs/heads/${branch}" 2>/dev/null; then
+            branch="pricing-sync-${GITHUB_RUN_ID}-$(date +%s)"
+            git push --set-upstream origin "HEAD:refs/heads/${branch}"
+          fi
+
+          gh pr create \
+            --title "$title" \
+            --body "自动同步官方 DeepSeek 定价（CNY 来自中文页、USD 来自英文页，官方分别定价、无需汇率换算）。
+
+          \`pricing/deepseek.json\` 原为人工手抄，本 PR 由 \`scripts/sync-pricing.mjs\` 抓取官方页生成。
+          请**逐条核对价格与 peak 时段**后合并——官方页改价无预告，机器只能保证「抓到的就是页面上的」，
+          保证不了「页面上的就是我们要的」。
+
+          差异详见本 PR 的文件 diff。" \
+            --base main \
+            --head "$branch"
+          # ⚠ **不要在这里删分支或关 PR**：PR 是给人审的，删分支会连带关掉它。
+          # 临时分支由仓库设置「Automatically delete head branches」在合并后清理。
