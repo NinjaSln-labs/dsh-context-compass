@@ -79,15 +79,17 @@ export interface CostConfig {
   priceSource: 'auto' | 'static'
   /**
    * Primary JSON pricing document URL for priceSource 'auto'. Default: the
-   * jsdelivr CDN mirror of the dsh-context-compass repo's pricing/deepseek.json —
-   * GitHub raw is unreachable on many CN networks and a failed fetch silently
-   * degrades the whole money display to static USD (no CNY).
+   * jsdelivr CDN mirror (@latest, NOT @main — see the schema default's note)
+   * of the dsh-context-compass repo's pricing/deepseek.json — GitHub raw is
+   * unreachable on many CN networks and a failed fetch silently degrades the
+   * whole money display to static USD (no CNY).
    */
   priceUrl: string
   /**
    * Fallback URL tried in the same refresh cycle when the primary fails.
    * Default: the canonical GitHub raw location (covers CDN outages / stale
-   * mirrors; whichever URL succeeds first wins).
+   * mirrors). With several sources the **freshest** document wins (by
+   * `updatedAt`), not the first one that answers.
    */
   priceFallbackUrl: string
   /** Refresh cadence for priceSource 'auto', in hours. Default 24. */
@@ -155,7 +157,12 @@ export const Config = z.object({
     inputPricePerM: z.number().min(0).default(0.28).volatile(),
     // 计费源 4 项：schema 文案已注明「重启后生效」，故不标 volatile。
     priceSource: z.union([z.const('auto'), z.const('static')]).default('auto'),
-    priceUrl: z.string().default('https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json'),
+    // ⚠ jsdelivr 必须用 **@latest**，不能用 @main（2026-10-28 实测）：
+    // jsdelivr 对 GitHub **分支引用**走永久存储 + 分支缓存（`s-maxage=43200`），
+    // 实测改价后 7 小时内 @main 仍返回**旧**文档；而 @latest 会回落到默认分支、
+    // 实测是实时的。旧式「第一个成功的源就赢」会让陈旧镜像永远赢 ⇒ 金额停在旧价
+    // 且**无任何报错**。多源择优（挑 updatedAt 最新的）见 src/pricing.ts。
+    priceUrl: z.string().default('https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@latest/pricing/deepseek.json'),
     priceFallbackUrl: z.string().default('https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json'),
     priceRefreshHours: z.number().min(1).max(24 * 30).default(24),
   }),
@@ -278,7 +285,7 @@ export function resolveConfig(config: Config = {}): ResolvedConfig {
     cacheHitDiscount: live(config.cost?.cacheHitDiscount) ?? 0.1,
     inputPricePerM: live(config.cost?.inputPricePerM) ?? 0.28,
     priceSource: live(config.cost?.priceSource) ?? 'auto',
-    priceUrl: live(config.cost?.priceUrl) ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',
+    priceUrl: live(config.cost?.priceUrl) ?? 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@latest/pricing/deepseek.json',
     priceFallbackUrl: live(config.cost?.priceFallbackUrl) ?? 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json',
     priceRefreshHours: live(config.cost?.priceRefreshHours) ?? 24,
   }

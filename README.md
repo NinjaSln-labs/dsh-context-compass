@@ -72,7 +72,7 @@ cost: {
   cacheHitDiscount: 0.1,       // 缓存命中价格比例
   inputPricePerM: 0.28,        // 静态兜底：USD / 1M 输入 token
   priceSource: 'auto',         // 'auto'：定期拉取；'static'：从不拉取
-  priceUrl: 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@main/pricing/deepseek.json',   // 主源（jsdelivr，CN 可达）
+  priceUrl: 'https://cdn.jsdelivr.net/gh/NinjaSln-labs/dsh-context-compass@latest/pricing/deepseek.json',   // 主源（jsdelivr @latest，CN 可达；**别用 @main**——它走分支缓存，改价后数小时仍是旧价）
   priceFallbackUrl: 'https://raw.githubusercontent.com/NinjaSln-labs/dsh-context-compass/main/pricing/deepseek.json', // 同轮回退（GitHub raw）
   priceRefreshHours: 24,
 }
@@ -81,7 +81,8 @@ cost: {
 ## 价格（金额显示）
 
 harness 不携带价格数据，金额显示通过实时缓存解析，数据源为**官方 DeepSeek 定价文档**
-（默认 `priceUrl` = jsdelivr CDN 镜像，`priceFallbackUrl` = GitHub raw 同轮回退；
+（默认 `priceUrl` = jsdelivr CDN 镜像（**`@latest`**，不是 `@main`——jsdelivr 对分支引用走
+永久存储 + 分支缓存，实测改价后 7 小时内 `@main` 仍返回旧价），`priceFallbackUrl` = GitHub raw 同轮回退；
 文档即本仓库维护的 [`pricing/deepseek.json`](pricing/deepseek.json)，
 由 `scripts/sync-pricing.mjs` 从 [api-docs.deepseek.com](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)
 **自动同步**——CI 定时抓官方中英文两页对比，有漂移即开 PR，人审后合并）。
@@ -96,6 +97,8 @@ harness 不携带价格数据，金额显示通过实时缓存解析，数据源
 - **按地区选币种**：应用界面为 zh 时显示 CNY，否则 USD；`/compass` 双币并列。
 - 每 `priceRefreshHours`（默认 24h）刷新；失败保留上次有效文档；首次成功前（或
   `priceSource: 'static'` 时）用静态 `inputPricePerM` / `cacheHitDiscount`（平价 USD，无时段）。
+- **多源择优**：两个源都取，比文档的 `updatedAt`——**取更新的那份**，不取先到的
+  （陈旧镜像曾因"先到先用"长期赢下，金额停在旧价且无任何报错）。
 
 文档格式（每个时段双币必填）：
 `{ "peakHours": [[9,12],[14,18]], "models": { "<模型名>": { "peak": { "inputMissPerMCny": 2.0, "inputHitPerMCny": 0.04, "inputMissPerMUsd": 0.30, "inputHitPerMUsd": 0.006 }, "offpeak": { ... } }, "*": { ... } } }`

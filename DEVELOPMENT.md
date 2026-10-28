@@ -168,6 +168,7 @@ git config core.hooksPath .githooks
 | **定价文档是人工手抄的** | 官方改价后仓内 `pricing/deepseek.json` 一直是旧价 ⇒ 金额显示按过期价算（2026-10 首跑同步器时发现 Flash 忙时 ¥3/M·$0.44/M，实际已降到 ¥2/M·$0.30/M ⇒ 一直偏高约 33%） | `scripts/sync-pricing.mjs`（R3）：抓官方中英文两页 → 两页 peak 时段交叉校验 → 逐字段比对 → 改写。`node scripts/sync-pricing.mjs` 看差异 / `--write` 改写 / `--check` 只判不改。**CI 定时 job 每日跑，有漂移即开 PR**（不推 main，人审后合）。**别再手抄价格** |
 | 官方定价页改版（表格结构变了） | 同步器解析不出表/列/价格 ⇒ 抛错退出（rc=2），`pricing/deepseek.json` **保持原样**（不做任何降级改写） | 报错会指名缺什么（`找不到模型表头行` / `两页 peak 时段换算后不一致` / `中文页未找到价格表`）——照报错改 `scripts/sync-pricing.mjs` 的解析器。⚠ 官方页 URL **必须带尾斜杠**（无斜杠会 302 到「首次调用 API」页，页面上没有价格表） |
 | GitHub Actions 的 `gh pr create` **不会替你推分支** | PR 建不出来，或报「head 分支不存在」 | 顺序必须是 **先 `git push` 分支、再 `gh pr create --head <branch>`**（2026-10 实测踩过）。且 job 需要 `contents: write`（只给 `pull-requests: write` 推不动分支）。⚠ 收尾**别删分支**——删分支会连带把人要审的 PR 关掉；临时分支交给仓库设置「合并后自动删 head 分支」 |
+| **jsdelivr 的 `@main` 是分支缓存，不是实时镜像** | 官方改价并同步后，插件金额显示**仍是旧价**，且无任何报错——插件从 CDN 拉的是陈旧文档 | 实测（2026-10-28）：`@main` 改价后 **7 小时**仍返回旧文档（edge `age`≈25000s、`s-maxage=43200`）；`@latest` 与 raw `@main` 是实时的。⇒ 主源改用 **`@latest`**；且插件多源刷新改成**挑 `updatedAt` 最新的那份**（旧式"第一个成功就赢"会让陈旧镜像永远赢）。⚠ 这是**运行时 URL**，不在 npm 包里 ⇒ 改了要**发版**才生效 |
 
 ## 维护
 

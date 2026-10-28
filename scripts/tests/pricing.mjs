@@ -106,6 +106,64 @@ export async function run() {
     } finally { Date.now = origNow }
   })
 
+  await check('pricing: 多源取 updatedAt 最新的那份，不取先到的（陈旧镜像不再赢）', async () => {
+    // 这条用例锁的是 2026-10-28 实测到的真事故：jsdelivr @main 走分支缓存，
+    // 改价后 7 小时内仍返回**旧**文档；旧式「第一个成功就赢」让陈旧镜像永远赢
+    // ⇒ 金额显示停在旧价且**无任何报错**。
+    const cache = new PriceCache(staticPricing(0.28, 0.1))
+    const stale = structuredClone(OFFICIAL_DOC)
+    stale.updatedAt = '2026-08-14' // 旧文档：忙时 ¥3/M·$0.44/M
+    stale.models['*'].peak = { inputMissPerMCny: 3.0, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 }
+    const fresh = structuredClone(OFFICIAL_DOC)
+    fresh.updatedAt = '2026-10-28' // 新文档
+    // 主源先到但**旧**，回退源后到但**新** ⇒ 必须选新的。
+    const serve = (url) => ({
+      ok: true,
+      json: async () => (url.includes('primary') ? structuredClone(stale) : structuredClone(fresh)),
+    })
+    assert.equal(await cache.refreshAny(['https://primary', 'https://fallback'], serve), true)
+    const origNow = Date.now
+    Date.now = () => Date.parse('2026-08-14T01:00:00Z') // 忙时
+    try {
+      assert.equal(cache.get('deepseek-flash').missPerMCny, 2.0, '必须用新文档（¥2/M），不是陈旧镜像的 ¥3/M')
+      assert.equal(cache.get('deepseek-flash').missPerMUsd, 0.30)
+    } finally { Date.now = origNow }
+  })
+
+  await check('pricing: 无 updatedAt 的文档不覆盖有 updatedAt 的（无据不猜）', async () => {
+    const cache = new PriceCache(staticPricing(0.28, 0.1))
+    const dated = structuredClone(OFFICIAL_DOC)
+    dated.updatedAt = '2026-10-28'
+    const undated = structuredClone(OFFICIAL_DOC)
+    delete undated.updatedAt
+    undated.models['*'].peak = { inputMissPerMCny: 9.9, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 }
+    // 主源无日期、后到；回退源有日期、先到 ⇒ 有日期的赢。
+    const serve = (url) => ({
+      ok: true,
+      json: async () => (url.includes('primary') ? structuredClone(undated) : structuredClone(dated)),
+    })
+    assert.equal(await cache.refreshAny(['https://primary', 'https://fallback'], serve), true)
+    const origNow = Date.now
+    Date.now = () => Date.parse('2026-08-14T01:00:00Z')
+    try {
+      assert.equal(cache.get('deepseek-flash').missPerMCny, 2.0, '有 updatedAt 的那份赢')
+    } finally { Date.now = origNow }
+  })
+
+  await check('pricing: 两个源都没 updatedAt ⇒ 保持先到先用（无据可依）', async () => {
+    const cache = new PriceCache(staticPricing(0.28, 0.1))
+    const a = structuredClone(OFFICIAL_DOC); delete a.updatedAt
+    const b = structuredClone(OFFICIAL_DOC); delete b.updatedAt
+    b.models['*'].peak = { inputMissPerMCny: 9.9, inputHitPerMCny: 0.10, inputMissPerMUsd: 0.44, inputHitPerMUsd: 0.014 }
+    const serve = (url) => ({ ok: true, json: async () => (url.includes('primary') ? structuredClone(a) : structuredClone(b)) })
+    assert.equal(await cache.refreshAny(['https://primary', 'https://fallback'], serve), true)
+    const origNow = Date.now
+    Date.now = () => Date.parse('2026-08-14T01:00:00Z')
+    try {
+      assert.equal(cache.get('deepseek-flash').missPerMCny, 2.0, '没日期 ⇒ 先到的赢')
+    } finally { Date.now = origNow }
+  })
+
   await check('pricing: invalid documents are rejected', async () => {
     const cache = new PriceCache(staticPricing(0.28, 0.1))
     for (const bad of [

@@ -59,6 +59,19 @@ interface PricingDocument {
   models: Readonly<Record<string, ModelPrice | undefined>>
 }
 
+/**
+ * `updatedAt`（ISO 日期）→ 可比较的时间戳；不是合法日期则返回 null。
+ *
+ * 它是**多源择优**的键：jsdelivr 的分支引用（`@main`）走永久存储 + 分支缓存
+ * （实测改价后 7 小时内仍返回旧文档），GitHub raw 则实时 ⇒ 同一个周期里两个源
+ * 拿到的**价格可能不同**。此时按「谁更新」择优，而不是「谁先返回」择优。
+ */
+function updatedAtMs(value: unknown): number | null {
+  if (typeof value !== 'string' || value === '') return null
+  const t = Date.parse(value)
+  return Number.isFinite(t) ? t : null
+}
+
 function isPair(value: unknown): value is readonly [number, number] {
   return Array.isArray(value)
     && value.length === 2
@@ -99,6 +112,7 @@ function validDocument(value: unknown): PricingDocument | null {
   return {
     peakHours: doc.peakHours as readonly (readonly [number, number])[],
     models,
+    updatedAt: typeof doc.updatedAt === 'string' ? doc.updatedAt : undefined,
   }
 }
 
@@ -167,11 +181,29 @@ export class PriceCache {
     timeoutMs = 10_000,
     onError?: (url: string, err: unknown) => void,
   ): Promise<boolean> {
+    const doc = await this.fetchDocument(url, fetchImpl, timeoutMs, onError)
+    if (doc === null) return false
+    this.doc = doc
+    return true
+  }
+
+  /**
+   * Fetch + validate one URL; null on any failure (never throws).
+   *
+   * 拆出来是因为多源择优需要**先拿到文档再比较**——`refresh` 直接落盘，
+   * 拿不到就没法比。
+   */
+  private async fetchDocument(
+    url: string,
+    fetchImpl: typeof fetch,
+    timeoutMs: number,
+    onError?: (url: string, err: unknown) => void,
+  ): Promise<PricingDocument | null> {
     try {
       const response = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) })
       if (!response.ok) {
         onError?.(url, new Error(`HTTP ${response.status}`))
-        return false
+        return null
       }
       // 防御（大文档）：定价文档正常 ~2KB，Content-Length 明确超 1MB 直接拒绝
       // ——CDN 被诱导托管超大文件时避免解析阶段 OOM。缺失长度头（或该头存取
@@ -180,32 +212,61 @@ export class PriceCache {
       const cl = Number(res.headers?.get?.('content-length'))
       if (Number.isFinite(cl) && cl > MAX_DOC_BYTES) {
         onError?.(url, new Error('pricing document too large'))
-        return false
+        return null
       }
       const doc = validDocument(await response.json())
       if (doc === null) {
         onError?.(url, new Error('invalid pricing document'))
-        return false
+        return null
       }
-      this.doc = doc
-      return true
+      return doc
     } catch (err) {
       onError?.(url, err)
-      return false
+      return null
     }
   }
 
-  /** Try the URLs in order; the first successful fetch wins. */
+  /**
+   * Refresh from the candidate URLs; the **freshest** document wins.
+   *
+   * ⚠ 为什么不是「第一个成功的就赢」（2026-10-28 实测）：
+   * jsdelivr 的 GitHub **分支引用**（`@main`）走永久存储 + 分支缓存
+   * （`s-maxage=43200`，实测改价后 7 小时内仍返回**旧**文档），而 GitHub raw
+   * 实时 ⇒ 同一刷新周期里两个源拿到的**价格可能不同**。旧式「先到先用」会让
+   * 陈旧镜像永远赢（只要它可达）⇒ 金额显示停在旧价，且**没有任何报错**。
+   *
+   * 择优键 = 文档的 `updatedAt`（同步器写的价格变更日期）：
+   * - 两份都有日期 → 取新的那份；
+   * - 有一份没日期 → **有日期的赢**（没日期＝无法证明它比另一份新）；
+   * - 都没日期 → 保持「第一个成功的赢」（无据可依，不猜）。
+   *
+   * 所有源都尝试（不因第一个成功就短路）：拿陈旧文档不算失败。
+   */
   async refreshAny(
     urls: readonly string[],
     fetchImpl: typeof fetch = fetch,
     timeoutMs = 10_000,
     onError?: (url: string, err: unknown) => void,
   ): Promise<boolean> {
+    let best: PricingDocument | null = null
+    let bestAt = Number.NEGATIVE_INFINITY
     for (const url of urls) {
-      if (await this.refresh(url, fetchImpl, timeoutMs, onError)) return true
+      const doc = await this.fetchDocument(url, fetchImpl, timeoutMs, onError)
+      if (doc === null) continue
+      const at = updatedAtMs(doc.updatedAt)
+      if (at === null) {
+        // 无日期：只在**还没有任何候选**时占位（第一个成功的），不覆盖有日期的。
+        if (best === null) best = doc
+        continue
+      }
+      if (best === null || at > bestAt) {
+        best = doc
+        bestAt = at
+      }
     }
-    return false
+    if (best === null) return false
+    this.doc = best
+    return true
   }
 }
 
