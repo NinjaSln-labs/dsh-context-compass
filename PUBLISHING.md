@@ -2,13 +2,13 @@
 
 **2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-10-02 更新）
+## 发布状态（2026-10-28 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.13.1`（latest，OIDC 发布，带 provenance）——0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
+| npm | ✅ `dsh-context-compass@0.13.2`（latest，OIDC 发布，带 provenance）——0.13.2 定价文档自动同步（R3）+ 修 jsdelivr 分支缓存致陈旧价永远赢；0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
-| 本地验证 | ✅ file: 安装 + 重启 profile 实测：门禁七步全绿、contract-check 5/5、visual 8/8（0.13.1，2026-10-01） |
+| 本地验证 | ✅ file: 安装（未发版期间按部署纪律）+ 重启 profile 实测：门禁七步全绿、contract-check 5/5、visual 8/8（0.13.1，2026-10-01） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
 
 ### npm 收录有延迟，job 绿 ≠ 已在 registry
@@ -30,6 +30,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.13.2** — **定价文档自动同步（R3 / C4）+ 修陈旧价永远赢**（2026-10-28，tag → `context-compass-v0.13.2`）：①**定价文档从人工手抄改为机器同步**——新增 `scripts/sync-pricing.mjs` 抓官方中英文两页定价表（CNY 取中文页、USD 取英文页，官方分别定价、无需汇率换算），**交叉校验 peak 时段**（英文页 UTC 换算须等于中文页北京时间），逐字段比对后改写；官方页改版导致解析不出时**抛错退出（rc=2）且文件保持原样**，不产出静默降级的定价。新增 `.github/workflows/sync-pricing.yml`：每日定时对比，有漂移则开 PR（不推 main，人审后合），**不需要任何 secret**；开 PR 路径已实机验证（真实推分支 + 真实建 PR + 关闭清理）。②**首次同步即发现官方 Flash 已降价**（忙时 ¥2/M·$0.30/M、闲时 ¥1/M·$0.15/M），仓内手抄价是旧的（¥3/M·$0.44/M / ¥1.5/M·$0.22/M）⇒ **金额显示此前一直偏高约三分之一**，已修正；并补官方注(1)声明的 `deepseek-flash` 与 `deepseek-v4-flash-vision-exp` 两个旧名别名（按 Flash 价计费）。③**顺带查出的真 bug：CDN 分支缓存让陈旧价永远赢**——主源 `priceUrl` 原指向 jsdelivr 的 `@main`，而 jsdelivr 对 GitHub **分支引用**走永久存储 + 分支缓存（实测改价后 **7 小时**仍返回旧文档，`edge age`≈25000s / `s-maxage=43200`）；旧式「第一个成功就赢」⇒ 陈旧镜像永远赢 ⇒ 金额停在旧价且**无任何报错**。修两处：主源改 `@latest`（实测实时）、`refreshAny` 改为**多源全取、挑 `updatedAt` 最新的那份**。测试：新增 9 组同步器用例 + 3 组多源择优用例。⚠ 这两个 URL 是**运行时**的、不在 npm 包里 ⇒ 改了必须发版才生效
 
 - **0.12.2** — **升级体检（dsh 0.1.2-alpha.4 → 0.1.5-rc.1）+ 冷路径契约修复**（2026-09-10）：①**升级体检全绿**——5 个客户端 slot 全部存在且 seat 全部 occupied/active（含曾被记账为「已移除」的 `conversation.chat.commandview`）、宿主 20 个 `ctx.get` 服务全在、`settings.installSection` / `settingsScope.bind+mutate` / `defineTool` / `CommandDefinition` 签名未变、live 投影数据真实、visual 6/6 且 `panel-dark` 仍逐像素匹配旧版基线（无视觉漂移）→ **本次升级未破坏任何可观测行为**。②**修潜伏三个版本的静默 bug**：冷路径按 0.1.1-rc.2 旧契约写（`cachedSnapshot(meta)` 单参 + `coldSnapshot(id, signal?): Promise` 后台化），而宿主自 0.1.2-alpha.x 起 `cachedSnapshot` 必需第二参 `inheritedEventCount`（内部 `identityOf()` → `SessionLogOffset(v)`，非负安全整数否则 **TypeError**），`coldSnapshot` 改为 `(meta, count, events): ProjectionSnapshot`（**private、同步、调用方自备全量日志，宿主自身零调用点**）。旧写法两处都抛且都被 `try/catch` 吞掉 → **冷会话 health 永远 null**（面板「暂无数据」），而磁盘上 189 个检查点里 173 个是有 `sessionHealth` 的。修法：改调 `cachedSnapshot(rec.header, 0, ['sessionHealth'])`（镜像宿主自身 listing 调用），删掉 `coldSnapshot` 分支与整套异步脚手架（`coldCache`/`coldInFlight`/TTL/单帧上限/`scheduleColdLoad`）——检查点读是**同步零 I/O**，冷行**首帧即有值**，不再有「下一帧补齐」窗口。**测试教训（pits 重演）**：原 stub 写成 `cachedSnapshot: meta => …` + `coldSnapshot: async`（按插件自己的假设），恰好把契约 bug 掩盖了三个版本；现按宿主真实形状复刻（第二参经 `assertLogOffset` 校验、同步返回、不提供 `coldSnapshot`），并加一组回归断言钉住调用实参。**格式代次说明**：`identityMatches` 要求 `formatVersion` 严格相等，170/189 条旧记录缺该字段（宿主刻意「永不相认」——缺格式代次无法证明折叠语义，其标题走 `cachedPredecessorTitle` 兜底）；带 `formatVersion:3`（当前 `SESSION_FORMAT_VERSION`）的 19 条可读，本次面板 6/6 行的检查点均在可读集内。测试规模：smoke 131 + mount 7 + client-mount 24 + visual 6；**视觉门禁适配宿主 0.1.5-rc.1**（侧栏改为按工作区分组的折叠树 → `revealSessionEntry()` 兼容两种形态；`setTheme` 改为切换后断言目标态落定，消除「shell 挂载前读到默认主题 → 提前 return → 拍出错主题图」的竞态）
 
@@ -168,7 +170,8 @@ dsh plugin add dsh-context-compass
 
 ## 维护要点
 
-- **价格变更**：更新 `pricing/deepseek.json`（同步自 https://api-docs.deepseek.com/quick_start/pricing/，中英双页），同时更新 `updatedAt`
+- **价格变更**：**不要手改** `pricing/deepseek.json` —— 由 `scripts/sync-pricing.mjs` 从 https://api-docs.deepseek.com/quick_start/pricing/ 中英双页抓取同步（CI 每日定时对比，有漂移即开 PR）。手工同步：`node scripts/sync-pricing.mjs` 看差异 / `--write` 改写 / `--check` 只判不改
+- **定价文档的 CDN 源**：主源用 jsdelivr 的 **`@latest`**，**不能用 `@main`**（分支引用走分支缓存，实测改价后 7 小时内仍返回旧文档）；插件多源刷新按 `updatedAt` 择优（取更新的那份，不取先到的）
 - **客户端 bundle**：改 `src/client.tsx` 后必须 `npm run build`（tsc + esbuild `__ModuleLoader__` 工厂格式）；host 与 client 变更都需要重启 dsh + 刷新浏览器
 - **发布流程（CI 自动发布 + OIDC）**：
   ```sh
