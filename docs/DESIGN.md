@@ -2,7 +2,7 @@
 
 > 状态：**已发布并归档（2026-08-14，v0.4.8）**——npm latest + 本地 profile 从 npm 加载验证通过。
 > ⚠️ **历史设计快照（v0.4.8 时代）**：现行版本 **0.11.0**（npm latest；命令注册名 `compass`、`projection.enabled` 默认 `true`、smoke 107 项），**以 `README.md` / `docs/ROADMAP.md` / `PUBLISHING.md` 为准**。下文原文保留以追溯设计脉络，未随后续版本改写。
-> 来源方法论：社区 session-health 技能（本地 `~/.agents/skills/`，见其 `SKILL.md`）——二维决策模型、工作性质 5 问、交接就绪检查，完整移植；数据层改用 DSH 原生信号。
+> 方法论：二维决策模型（容量 + 经济 + 质量 + 消息数四维取最严信号）+ 工作性质 5 问 + 交接就绪检查；数据层全部改用 DSH 原生信号。
 
 ## 0. 实现状态（2026-08-14，**v0.4.8 已发布**）⚠️ *历史快照（v0.4.8 时代）；现行 0.11.0，以 README/ROADMAP 为准*
 
@@ -26,16 +26,16 @@
 
 **它是什么**：一个 DSH bundle 插件，让用户（和模型）随时评估当前会话的"继续 vs 新开"健康度，输出**真实数据支撑**的报告（不是体感）。
 
-**为什么 DSH 做这个有独特优势**（vs 技能在 Cursor 上的信号缺失降级）：
+**信号来源**（全部为 DSH 原生精确测量，无需估算）：
 
-| 信号 | session-health 技能在 Cursor | dsh-context-compass 在 DSH |
-|---|---|---|
-| 上下文占用（每轮 token） | ❌ 估算（消息数 × 单条均值） | ✅ **`ctx.tokenMeter` 精确测量** |
-| 模型窗口 | 查表/问用户 | ✅ llm 适配器 `contextWindow`（deepseek 1M） |
-| 压缩比例 | ❌ 跳过（"无压缩标记"） | ✅ token-meter 快照 vs 累计推断 |
-| 消息数/轮次 | 目录扫描 | ✅ 会话事件流统计 |
-| 恢复能力 | 工具历史面板 | ✅ JSONL + sessionQuery + 投影缓存 |
-| 经济成本 | ❌ 无法量化 | ✅ tokenMeter 绝对值 × 剩余轮数 |
+| 信号 | 来源 |
+|---|---|
+| 上下文占用（每轮 token） | **`ctx.tokenMeter` 精确测量** |
+| 模型窗口 | llm 适配器 `contextWindow`（deepseek 1M） |
+| 压缩比例 | token-meter 快照 vs 累计推断 |
+| 消息数/轮次 | 会话事件流统计 |
+| 恢复能力 | JSONL + sessionQuery + 投影缓存 |
+| 经济成本 | tokenMeter 绝对值 × 剩余轮数 |
 
 **消费面（三个）**：
 1. `/compass` 命令——用户主动（`ctx.commands`）
@@ -56,7 +56,7 @@
 | 交接文档 | 文件系统 | 交接文档存在性检查（fs 只读；只探测用户配置的文件名。本仓库自身的 `HANDOFF.md` 已改为本地私有未追踪，读者在发布仓库中看不到） |
 | 工作性质 | 模型判断 + 用户确认 | 工具内部先自查（对话内容可推断），关键项用 `ask_user_question` 确认 |
 
-## 3. 判定模型（移植技能，参数化）
+## 3. 判定模型（参数化）
 
 ### 维度 A —— 继续成本（取最严信号）
 | 信号 | 阈值（默认参数，可配置） | 成本 |
@@ -199,8 +199,8 @@ checks: z.object({
 
 ## 6. 发布与公开
 
-- 独立 repo + `dsh-plugin` topic；README 含方法论来源（session-health 技能）+ 数据口径说明
-- 文档公开：DESIGN（本文）+ 与技能版的信号对比表（DSH 精确 vs Cursor 降级）
+- 独立 repo + `dsh-plugin` topic；README 含方法论说明 + 数据口径说明
+- 文档公开：DESIGN（本文）+ 信号来源与口径表（全部为 DSH 原生精确测量）
 
 ## 7. 与记忆插件的协同
 

@@ -232,7 +232,7 @@ function pushSample(
 /**
  * State → wire payload: severity + advice from the config thresholds.
  *
- * Priority mirrors the skill: economy (per-round billable cost, paid every
+ * Priority: economy (per-round billable cost, paid every
  * round) outranks capacity (window ratio); the message-count proxy annotates
  * only at the bottom tier (green → blue). The economy trigger bills the same
  * cache-discounted figure the badge displays (`effectivePerRound`), and its

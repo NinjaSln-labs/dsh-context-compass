@@ -1,10 +1,11 @@
 /**
  * dsh-context-compass — plugin configuration.
  *
- * Every threshold mirrors the community session-health skill's
- * two-dimensional continue-vs-new decision model, but as host-side defaults a
- * deployment can override. The exported schemastery `Config` documents the
- * shape for the Loader / settings UI; resolveConfig() defensively defaults so
+ * Every threshold is a host-side default a deployment can override; together
+ * they form the two-dimensional continue-vs-new decision model (capacity +
+ * economy + quality + message count — the strictest signal wins). The exported
+ * schemastery `Config` documents the shape for the Loader / settings UI;
+ * resolveConfig() defensively defaults so
  * partial configs (and tests) always yield a complete ResolvedConfig.
  */
 import z from '@deepseek-ai/schemastery'

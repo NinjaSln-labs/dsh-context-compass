@@ -134,7 +134,7 @@ npm run visual:update  # rewrite baselines after an intentional visual change (v
 
 ## Design
 
-Methodology derives from the community session-health skill (the two-dimensional continue-vs-switch model); the harness version upgrades the data layer from estimation to exact measurement. Full design notes (signal mapping, decision model, configurable checks) live in [`docs/DESIGN.md`](docs/DESIGN.md); the forward roadmap lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Methodology: a two-dimensional continue-vs-switch model (capacity + economy + quality + message count — the strictest signal wins); every data layer signal is **exactly measured** from native DSH signals, with no estimation. Full design notes (signal mapping, decision model, configurable checks) live in [`docs/DESIGN.md`](docs/DESIGN.md); the forward roadmap lives in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## ⭐ Support
 
