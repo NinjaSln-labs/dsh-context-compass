@@ -606,13 +606,13 @@ export async function run() {
       recommendation: 'suggest-switch',
       summary: '建议在任务边界收尾',
       reason: 'r',
-      signals: { total: 600_000, window: 1_000_000, ratio: 0.6, turns: 20, userMessages: 30, assistantMessages: 29, compactions: 2, compactionRatio: 0.42, cacheHitRate: 0.9 },
+      signals: { total: 600_000, window: 1_000_000, ratio: 0.6, turns: 20, steps: 77, userMessages: 30, assistantMessages: 29, compactions: 2, compactionRatio: 0.42, cacheHitRate: 0.9 },
       probes: [],
       handoff: { isGitRepo: true, hasHandoff: true, runningProcesses: [], uncommittedCount: 3, lastCommit: 'abc123', branchLine: '## main...origin/main [ahead 2]' },
     })
     assert.ok(text.includes('上下文罗盘摘要'))
     assert.ok(text.includes('健康度：yellow'))
-    assert.ok(text.includes('会话规模：20 轮 / 59 条消息'))
+    assert.ok(text.includes('会话规模：20 轮 / 77 步 / 59 条消息'))
     assert.ok(text.includes('每轮输入：约 600K token（窗口 60%）'))
     assert.ok(text.includes('缓存命中：90%'))
     assert.ok(text.includes('已压缩：2 次（上次压缩比例 ≈ 42%）'))
@@ -631,7 +631,7 @@ export async function run() {
       reason: '',
       signals: {
         total: 1_500_000, window: 1_000_000, ratio: 1.5, // 150% → must show 100%
-        turns: 20, userMessages: 25, assistantMessages: 24,
+        turns: 20, steps: 48, userMessages: 25, assistantMessages: 24,
         compactions: 0, compactionRatio: null,
       },
       probes: [],

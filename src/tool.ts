@@ -61,7 +61,8 @@ const OUTPUT_SCHEMA = {
       properties: {
         windowPercent: { type: 'number', description: '每轮输入占模型窗口百分比（未知时省略）' },
         tokensPerRound: { type: 'number', description: '每轮输入 token 数（未知时省略）' },
-        turns: { type: 'number', description: '会话轮次' },
+        turns: { type: 'number', description: '会话轮次（用户回合）' },
+        steps: { type: 'number', description: '会话步数（一次模型调用 + 它发起的工具执行；多工具回合下步数大于轮次）' },
         messageCount: { type: 'number', description: '消息总数（用户 + 助手）' },
         compactions: { type: 'number', required: true, description: '已压缩次数（0 表示从未压缩；恒存在）' },
         compactionRatio: { type: 'number', description: '上次压缩比例 0..1（按压缩前后压力快照差值推断——快照口径，非精确统计；未知时省略）' },
@@ -110,7 +111,7 @@ const OUTPUT_SCHEMA = {
 function renderToolText(value: {
   summary?: string
   report?: string
-  signals?: { windowPercent?: number; tokensPerRound?: number; turns?: number; messageCount?: number; compactions?: number; compactionRatio?: number }
+  signals?: { windowPercent?: number; tokensPerRound?: number; turns?: number; steps?: number; messageCount?: number; compactions?: number; compactionRatio?: number }
 }): string {
   if (value.report !== undefined && value.report.length > 0) return value.report
   const s = value.signals
@@ -119,6 +120,7 @@ function renderToolText(value: {
   if (s.windowPercent !== undefined) parts.push(`窗口占用 ${s.windowPercent}%`)
   if (s.tokensPerRound !== undefined) parts.push(`每轮输入 ${s.tokensPerRound} token`)
   if (s.turns !== undefined) parts.push(`${s.turns} 轮`)
+  if (s.steps !== undefined) parts.push(`${s.steps} 步`)
   if (s.messageCount !== undefined) parts.push(`${s.messageCount} 条消息`)
   if ((s.compactions ?? 0) > 0) {
     const ratioNote = typeof s.compactionRatio === 'number' && Number.isFinite(s.compactionRatio)
@@ -156,6 +158,7 @@ export function sessionHealthTool(ctx: Context, config: ConfigSource): ToolDefin
         windowPercent?: number
         tokensPerRound?: number
         turns?: number
+        steps?: number
         messageCount?: number
         compactions: number
         compactionRatio?: number
@@ -163,6 +166,7 @@ export function sessionHealthTool(ctx: Context, config: ConfigSource): ToolDefin
       if (report.signals.ratio !== null) signals.windowPercent = Math.min(Math.round(report.signals.ratio * 100), 100)
       if (report.signals.total !== null) signals.tokensPerRound = report.signals.total
       if (report.signals.turns !== null) signals.turns = report.signals.turns
+      if (report.signals.steps !== null) signals.steps = report.signals.steps
       if (report.signals.userMessages !== null || report.signals.assistantMessages !== null) {
         signals.messageCount = (report.signals.userMessages ?? 0) + (report.signals.assistantMessages ?? 0)
       }

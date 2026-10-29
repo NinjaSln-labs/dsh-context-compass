@@ -58,6 +58,12 @@ export const PRESSURE_HISTORY_CAP = 40
 /** Fold state (plain JSON per the unit contract — persisted-cache precondition). */
 export interface SessionHealthState {
   turns: number
+  /**
+   * Completed steps across the session — host definition: one step is one
+   * model call plus the tool executions it requested. Multi-tool-call turns
+   * make steps outrun turns (R5).
+   */
+  steps: number
   lastTurn: number | null
   userMessages: number
   assistantMessages: number
@@ -93,7 +99,7 @@ export interface SessionHealthState {
 }
 
 function init(): SessionHealthState {
-  return { turns: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0 }
+  return { turns: 0, steps: 0, lastTurn: null, userMessages: 0, assistantMessages: 0, compactions: 0 }
 }
 
 /**
@@ -151,9 +157,11 @@ export function applyHealthEvent(state: SessionHealthState, event: SessionEvent)
   }
   switch (event.type) {
     case 'step/end': {
-      // Distinct turns only (step/end is the step lifecycle authority).
-      if (state.lastTurn === event.data.turn) return state
-      return { ...state, turns: state.turns + 1, lastTurn: event.data.turn }
+      // Every completed step counts (one model call + its tool executions);
+      // turns count distinct turn values only.
+      const next: SessionHealthState = { ...state, steps: (state.steps ?? 0) + 1 }
+      if (state.lastTurn === event.data.turn) return next
+      return { ...next, turns: state.turns + 1, lastTurn: event.data.turn }
     }
     case 'user/message':
       return { ...state, userMessages: state.userMessages + 1 }
@@ -295,6 +303,7 @@ export function healthView(
   // scales with the window (A4): max(messageCountProxy, ratio × window) — 800
   // messages means little on a 1M window.
   const turns = countOrZero(state.turns)
+  const steps = countOrZero(state.steps)
   const userMessages = countOrZero(state.userMessages)
   const assistantMessages = countOrZero(state.assistantMessages)
   const compactions = countOrZero(state.compactions)
@@ -365,6 +374,7 @@ export function healthView(
     total,
     window,
     turns,
+    steps,
     userMessages,
     assistantMessages,
     compactions,
@@ -431,7 +441,9 @@ export function sessionHealthProjectionDefinition(
     // v10 (AUDIT R1-1): lastSample (turn, step) dedup key + capture-failure
     // ratio invalidation change fold semantics — old rows discarded, replay
     // rebuilds both history and dedup state.
-    stateVersion: 10,
+    // v11 (R5): steps fold field added (one count per completed step) — old
+    // rows discarded, replay rebuilds the count.
+    stateVersion: 11,
   }
   return unit as unknown as SessionHealthDefinition
 }

@@ -26,6 +26,7 @@ export async function run() {
     assert.equal(value.signals.windowPercent, 30)
     assert.equal(value.signals.tokensPerRound, 300_000)
     assert.equal(value.signals.messageCount, 3) // 2 user + 1 assistant in the stub events
+    assert.equal(value.signals.steps, 5) // projection snapshot steps (R5)
     assert.equal(value.handoffReady.isGitRepo, true)
     assert.ok(typeof value.report === 'string' && value.report.length > 0)
   })

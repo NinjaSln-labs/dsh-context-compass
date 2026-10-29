@@ -1,5 +1,5 @@
 /**
- * Smoke domain: R1 — 占用趋势 sparkline（ROADMAP 0.9.0，stateVersion 10）。
+ * Smoke domain: R1 — 占用趋势 sparkline（ROADMAP 0.9.0；stateVersion 守卫用例在末尾）。
  * Checks moved verbatim from the monolith (L1623-1659) + AUDIT-driven cases
  * (R1-1 dedup, R1-2 null% advice, R1-3 capture-failure ratio invalidation).
  * Note: in the original file this block runs BETWEEN S2 and S3, so the runner
@@ -67,9 +67,9 @@ export async function run() {
     assert.deepEqual(healthView({ turns: 1, userMessages: 0, assistantMessages: 0, compactions: 0 }, config).pressureHistory, [])
   })
 
-  await check('R1: stateVersion 已 bump 至 10（AUDIT R1-1 折叠语义变化；旧行丢弃全量重放）', () => {
+  await check('R1: stateVersion 守卫（折叠语义变更必须 bump；当前 11 — R5 加 steps，旧行丢弃全量重放）', () => {
     const def = sessionHealthProjectionDefinition(config)
-    assert.equal(def.stateVersion, 10)
+    assert.equal(def.stateVersion, 11)
   })
 
   await check('R1: proxyHit 晋级 blue 且 ratio 为 null 时 advice 不含字面量 null%（AUDIT R1-2）', () => {

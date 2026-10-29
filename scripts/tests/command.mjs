@@ -104,11 +104,12 @@ export async function runTextBuilder() {
       recommendation: 'continue-with-note',
       summary: 'x',
       reason: '上下文占用 42%（中等）——继续没问题，留意窗口压力。',
-      signals: { total: 420_000, window: 1_000_000, ratio: 0.42, turns: 8, userMessages: 10, assistantMessages: 9, compactions: 1, compactionRatio: null },
+      signals: { total: 420_000, window: 1_000_000, ratio: 0.42, turns: 8, steps: 19, userMessages: 10, assistantMessages: 9, compactions: 1, compactionRatio: null },
       probes: [],
       handoff: { isGitRepo: null, hasHandoff: null, runningProcesses: [] },
     }, { minimal: false })
     assert.ok(text.includes('健康度：**蓝**'))
+    assert.ok(text.includes('- 会话规模：8 轮 / 19 步 / 10 条消息 / 9 条回复'))
     assert.ok(text.includes('已压缩 1 次'))
     assert.ok(!text.includes('切换前检查')) // blue: no switch checklist
   })

@@ -10,16 +10,25 @@
  */
 import assert from 'node:assert/strict'
 import { applyHealthEvent, healthView, compactIntervalRounds } from '../../lib/projection.js'
+import { sessionHealthProjectionSchema } from '../../lib/schemas.js'
 import { check, config, ratioConfig, state } from './helpers.mjs'
 
 export async function run() {
-  await check('projection: fold counts (turns/messages/compactions)', () => {
+  await check('projection: fold counts (turns/steps/messages/compactions)', () => {
     assert.equal(state.turns, 2)
+    assert.equal(state.steps, 3) // 3 个 step/end 各计一步（turn 1 的两个 step 都计数）；turns 仍按去重 turn 记 2
     assert.equal(state.userMessages, 2)
     assert.equal(state.assistantMessages, 3) // 0.2.0-rc.2：usage 随 assistant/message 发，故第三条 message 也计数
     assert.equal(state.compactions, 1)
     assert.equal(state.pressureTokens, 32_000) // last usage sample wins
     assert.equal(state.contextWindow, 100_000)
+  })
+
+  await check('projection: R5 steps 进 view（多工具回合步数大于轮次）', () => {
+    const v = healthView(state, ratioConfig)
+    assert.equal(v.steps, 3)
+    assert.ok(v.steps > v.turns, `steps=${v.steps} turns=${v.turns}`)
+    sessionHealthProjectionSchema.parse(v)
   })
 
   await check('projection: compactIntervalRounds — turns/compactions 取整', () => {

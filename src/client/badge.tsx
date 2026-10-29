@@ -272,7 +272,7 @@ export function HealthBadge(props: {
             {proj !== undefined ? (
               <div className="sh-tip-row">
                 <span className="sh-k">会话规模</span>
-                <span className="sh-v">{proj.turns} 轮 / {proj.userMessages + proj.assistantMessages} 条消息</span>
+                <span className="sh-v">{proj.turns} 轮 / {proj.steps} 步 / {proj.userMessages + proj.assistantMessages} 条消息</span>
               </div>
             ) : null}
           </>

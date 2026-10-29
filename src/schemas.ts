@@ -20,6 +20,7 @@ export const sessionHealthProjectionSchema = zod.object({
   total: zod.number().nullable(),
   window: zod.number().nullable(),
   turns: zod.number().int().nonnegative(),
+  steps: zod.number().int().nonnegative(),
   userMessages: zod.number().int().nonnegative(),
   assistantMessages: zod.number().int().nonnegative(),
   compactions: zod.number().int().nonnegative(),
@@ -44,6 +45,7 @@ export const sessionHealthProjectionSchema = zod.object({
  */
 export const sessionHealthStateSchema = zod.object({
   turns: zod.number(),
+  steps: zod.number(),
   lastTurn: zod.number().nullable(),
   userMessages: zod.number(),
   assistantMessages: zod.number(),

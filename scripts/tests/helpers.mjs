@@ -97,7 +97,7 @@ export const services = {
       values: {
         sessionHealth: {
           severity: 'yellow', advice: 'a', ratio: 0.3, total: 300_000, window: 1_000_000,
-          turns: 2, userMessages: 2, assistantMessages: 1, compactions: 1, compressionRatio: 0.4,
+          turns: 2, steps: 5, userMessages: 2, assistantMessages: 1, compactions: 1, compressionRatio: 0.4,
           uncachedInputTokens: 300_000, cacheReadTokens: 0,
           effectivePerRound: 300_000, effectivePerRoundUsd: 0.084, effectivePerRoundCny: null, pricePeriod: null,
         },
@@ -287,6 +287,7 @@ export const healthOf = (severity, extra = {}) => ({
   total: null,
   window: null,
   turns: 0,
+  steps: 0,
   userMessages: 0,
   assistantMessages: 0,
   compactions: 0,
@@ -378,7 +379,7 @@ export function assertWireSafe(view, label) {
   for (const k of WIRE_NULLABLE_FINITE) {
     assert.ok(view[k] === null || (Number.isFinite(view[k]) && view[k] >= 0), `${label}: ${k} = ${view[k]}`)
   }
-  for (const k of ['turns', 'userMessages', 'assistantMessages', 'compactions']) {
+  for (const k of ['turns', 'steps', 'userMessages', 'assistantMessages', 'compactions']) {
     assert.ok(Number.isInteger(view[k]) && view[k] >= 0, `${label}: ${k} = ${view[k]}`)
   }
   assert.ok(Array.isArray(view.pressureHistory) && view.pressureHistory.every(Number.isFinite), `${label}: pressureHistory = ${JSON.stringify(view.pressureHistory)}`)

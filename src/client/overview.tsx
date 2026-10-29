@@ -333,7 +333,7 @@ export function OverviewBody(props: {
           <span className="sh-row-num" title="上下文占用（窗口百分比）">占用</span>
           <span className="sh-row-num sh-dim" title="每轮输入计费当量（含缓存折扣）">输入</span>
           <span className="sh-row-num sh-dim" title="每轮输入费用（含缓存折扣，忙闲时价）">费用</span>
-          <span className="sh-row-num" title="轮次 / 消息数">规模</span>
+          <span className="sh-row-num" title="轮次 / 步数 / 消息数">规模</span>
           <button type="button" className={`sh-col-head sh-row-num${sortMode === 'time' ? ' sh-sort-active' : ''}`} onClick={() => changeSort('time')} aria-label="按上次使用排序">活动{sortMode === 'time' ? '↓' : ''}</button>
         </div>
         <div className="sh-panel-list" ref={listRef}>
@@ -356,7 +356,7 @@ export function OverviewBody(props: {
                 health?.effectivePerRound !== null && health?.effectivePerRound !== undefined
                   ? `约 ${compact(health.effectivePerRound)} token/轮`
                   : null,
-                health !== null ? `${health.turns} 轮 / ${health.userMessages + health.assistantMessages} 条` : null,
+                health !== null ? `${health.turns} 轮 / ${health.steps} 步 / ${health.userMessages + health.assistantMessages} 条` : null,
                 health !== null && health.compactions > 0
                   ? `已压缩 ${health.compactions} 次${health.compressionRatio !== null && health.compressionRatio !== undefined ? `（上次压缩比例 ≈ ${Math.round(health.compressionRatio * 100)}%，快照口径）` : ''}`
                   : null,
@@ -364,7 +364,7 @@ export function OverviewBody(props: {
               ].filter((v): v is string => v !== null)
               const ariaSev = severity === 'unknown' ? '未知' : SEVERITY_ARIA[severity]
               const wsLabel = row.workspace !== null ? row.workspace.title : '未分组'
-              const scale = health !== null ? `${health.turns}轮/${health.userMessages + health.assistantMessages}条` : '—'
+              const scale = health !== null ? `${health.turns}轮/${health.steps}步/${health.userMessages + health.assistantMessages}条` : '—'
               const perRound = health?.effectivePerRound !== null && health?.effectivePerRound !== undefined
                 ? compact(health.effectivePerRound)
                 : '—'

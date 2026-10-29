@@ -90,7 +90,7 @@ export async function run() {
     const fresh = registry.viewCheckpoint({
       sessionHealth: {
         ver: def.stateVersion, seq: 9,
-        val: { turns: 1, lastTurn: 1, userMessages: 1, assistantMessages: 1, compactions: 0 },
+        val: { turns: 1, steps: 2, lastTurn: 1, userMessages: 1, assistantMessages: 1, compactions: 0 },
       },
     })
     assert.ok(fresh.sessionHealth, 'valid state row must serve a view')
@@ -103,7 +103,7 @@ export async function run() {
       'advice', 'assistantMessages', 'cacheReadTokens', 'compactions', 'compressionRatio',
       'effectivePerRound', 'effectivePerRoundCny', 'effectivePerRoundUsd',
       'pressureHistory', 'pricePeriod',
-      'ratio', 'severity', 'total', 'turns', 'uncachedInputTokens', 'userMessages', 'window',
+      'ratio', 'severity', 'steps', 'total', 'turns', 'uncachedInputTokens', 'userMessages', 'window',
     ])
   })
 }

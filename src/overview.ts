@@ -628,7 +628,7 @@ export function buildHandoffSummary(report: HealthReport): string {
   const lines: string[] = ['上下文罗盘摘要', '—']
   lines.push(`健康度：${report.severity}（${report.summary}）`)
   if (typeof s.turns === 'number') {
-    lines.push(`会话规模：${s.turns} 轮 / ${(s.userMessages ?? 0) + (s.assistantMessages ?? 0)} 条消息`)
+    lines.push(`会话规模：${s.turns} 轮 / ${s.steps ?? 0} 步 / ${(s.userMessages ?? 0) + (s.assistantMessages ?? 0)} 条消息`)
   }
   if (s.total !== null) {
     lines.push(`每轮输入：约 ${formatCompact(s.total)} token${pct !== null ? `（窗口 ${pct}%）` : ''}`)

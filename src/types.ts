@@ -38,6 +38,12 @@ export interface SessionHealthProjection {
   /** Model context window in tokens. */
   window: number | null
   turns: number
+  /**
+   * Completed steps across the session (host step = one model call plus the
+   * tool executions it requested). Steps outrun turns when a turn chains
+   * multiple tool-call rounds (R5).
+   */
+  steps: number
   userMessages: number
   assistantMessages: number
   /** Number of compaction rounds (early detail summarized). */

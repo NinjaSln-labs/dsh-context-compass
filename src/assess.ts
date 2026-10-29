@@ -24,6 +24,8 @@ export interface HealthSignals {
   window: number | null
   ratio: number | null
   turns: number | null
+  /** Completed steps (one model call + its tool executions); null when unknown. */
+  steps: number | null
   userMessages: number | null
   assistantMessages: number | null
   compactions: number
@@ -136,6 +138,7 @@ async function resolveWindow(ctx: Context): Promise<number | null> {
 
 interface Counts {
   turns: number | null
+  steps: number | null
   user: number | null
   assistant: number | null
 }
@@ -157,7 +160,7 @@ async function readCounts(
       const value = values.sessionHealth
       if (value !== undefined) {
         return {
-          counts: { turns: value.turns, user: value.userMessages, assistant: value.assistantMessages },
+          counts: { turns: value.turns, steps: value.steps, user: value.userMessages, assistant: value.assistantMessages },
           compactions: value.compactions,
           snapshot: value,
           // The cache-hit rate rides the CORE tokenUsage projection — the
@@ -169,22 +172,24 @@ async function readCounts(
   }
   const sessionQuery = ctx.get('sessionQuery')
   if (sessionQuery === undefined || agentId === undefined) {
-    return { counts: { turns: null, user: null, assistant: null }, compactions: 0 }
+    return { counts: { turns: null, steps: null, user: null, assistant: null }, compactions: 0 }
   }
   try {
     const events = await sessionQuery.listEvents(agentId, { signal })
     let turns = 0
+    let steps = 0
     let user = 0
     let assistant = 0
     for (const e of events) {
       const t = (e as { type?: string }).type ?? (e as { event?: { type?: string } }).event?.type ?? ''
       if (t === 'turn/start') turns++
+      else if (t === 'step/end') steps++
       else if (t === 'user/message') user++
       else if (t === 'assistant/message') assistant++
     }
-    return { counts: { turns, user, assistant }, compactions: 0 }
+    return { counts: { turns, steps, user, assistant }, compactions: 0 }
   } catch {
-    return { counts: { turns: null, user: null, assistant: null }, compactions: 0 }
+    return { counts: { turns: null, steps: null, user: null, assistant: null }, compactions: 0 }
   }
 }
 
@@ -436,6 +441,7 @@ export async function assess(
     : null
   const state: SessionHealthState = {
     turns: counts.turns ?? 0,
+    steps: counts.steps ?? 0,
     lastTurn: null,
     userMessages: counts.user ?? 0,
     assistantMessages: counts.assistant ?? 0,
@@ -644,6 +650,7 @@ export async function assess(
       window,
       ratio,
       turns: counts.turns,
+      steps: counts.steps,
       userMessages: counts.user,
       assistantMessages: counts.assistant,
       compactions,

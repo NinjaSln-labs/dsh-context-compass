@@ -39,7 +39,7 @@ export function buildCommandText(report: HealthReport, opts: { minimal: boolean 
     '详情：',
   ]
   if (typeof s.turns === 'number') {
-    lines.push(`- 会话规模：${s.turns} 轮 / ${s.userMessages ?? 0} 条消息 / ${s.assistantMessages ?? 0} 条回复`)
+    lines.push(`- 会话规模：${s.turns} 轮 / ${s.steps ?? 0} 步 / ${s.userMessages ?? 0} 条消息 / ${s.assistantMessages ?? 0} 条回复`)
   }
   if (typeof s.total === 'number') {
     lines.push(`- 每轮输入约 ${formatCompact(s.total)} token${s.ratio !== null ? `（窗口 ${Math.min(Math.round(s.ratio * 100), 100)}%）` : ''}${s.window !== null ? `；窗口 ${formatCompact(s.window)}` : ''}`)

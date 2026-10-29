@@ -42,6 +42,7 @@ export async function run() {
     const report = await assess(ctx, session, 'agent-1', signal, probesOn(config), { docName: 'HANDOFF.md' })
     assert.equal(report.severity, 'yellow') // billable 300K >= max(50K, 0.3×1M) economy floor
     assert.equal(report.signals.turns, 2)
+    assert.equal(report.signals.steps, 5)
     assert.equal(report.signals.userMessages, 2)
     assert.equal(report.signals.total, 300_000)
     assert.equal(report.handoff.isGitRepo, true)
@@ -195,7 +196,7 @@ export async function run() {
               values: {
                 sessionHealth: {
                   severity: 'yellow', advice: 'a', ratio: 0.13, total: 132_000, window: 1_000_000,
-                  turns: 2, userMessages: 2, assistantMessages: 1, compactions: 0,
+                  turns: 2, steps: 4, userMessages: 2, assistantMessages: 1, compactions: 0,
                   uncachedInputTokens: 13_200, cacheReadTokens: 118_800,
                   effectivePerRound: 25_080, // 13200 + 118800*0.1
                   effectivePerRoundUsd: (25_080 * 0.28) / 1_000_000, // $0.007/轮
