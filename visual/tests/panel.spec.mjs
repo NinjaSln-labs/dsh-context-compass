@@ -33,6 +33,9 @@ test('panel light: 四档矩阵 + 固定 5 行高度 + 行序', async ({ page })
   await expect(page.locator('.sh-panel-row').nth(0)).toContainText('运行中')
   await expect(page.locator('.sh-panel-row').nth(1)).toContainText('已加载')
   await expect(page.locator('.sh-panel-row').nth(2)).toContainText('冷却')
+  // 规模列：轮次 / 步数 / 消息数 三数并列（R5）——像素门禁之外补一条文本断言，
+  // 文案回归的失败诊断比截图 diff 更直接。
+  await expect(page.locator('.sh-panel-row').nth(0)).toContainText('41轮/96步/839条')
   // 固定 5 行高度：列表几何不得随行数变化（41px × 5 + 16px padding）。
   const box = await page.locator('.sh-panel-list').boundingBox()
   expect(Math.round(box.height)).toBe(41 * 5 + 16)

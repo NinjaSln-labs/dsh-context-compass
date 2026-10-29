@@ -21,7 +21,7 @@ export default defineConfig({
   reporter: [['list']],
   expect: {
     toHaveScreenshot: {
-      maxDiffPixelRatio: 0.02, // antialiasing/env tolerance; masks carry the dynamic data
+      maxDiffPixelRatio: 0, // 同机渲染是确定性的；容差会吞掉小面积文案漂移（2026-10-29 实测：规模列加「96步/」没过 2% 阈值）
       animations: 'disabled',
     },
   },
