@@ -2,13 +2,13 @@
 
 **2026-09 起独立单库发布**（自 `NinjaSln-labs/dsh-plugins` monorepo 迁出）：仓库 = `NinjaSln-labs/dsh-context-compass`；认证 = **npm Trusted Publishing（OIDC）**——无需 token，publish.yml 的 `id-token: write` 自动鉴权 + provenance 签名。
 
-## 发布状态（2026-10-28 更新）
+## 发布状态（2026-10-29 更新）
 
 | 项 | 状态 |
 |---|---|
-| npm | ✅ `dsh-context-compass@0.13.3`（latest，OIDC 发布，带 provenance）——0.13.3 移除已退役 session-health 技能的来源引用；0.13.2 定价文档自动同步（R3）+ 修 jsdelivr 分支缓存致陈旧价永远赢；0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
+| npm | ✅ `dsh-context-compass@0.13.4`（latest，OIDC 发布，带 provenance）——0.13.4 压缩比例分档标注（t000036）+ 轮次/步数语义（R5）+ 视觉门禁容差收紧；0.13.3 移除已退役 session-health 技能的来源引用；0.13.2 定价文档自动同步（R3）+ 修 jsdelivr 分支缓存致陈旧价永远赢；0.13.0 dsh@0.2.0-rc.2 全面适配（BREAKING）+ 0.13.1 token 显示取整 |
 | GitHub | ✅ `NinjaSln-labs/dsh-context-compass` main；发版 tag `context-compass-v*` |
-| 本地验证 | ✅ file: 安装（未发版期间按部署纪律）+ 重启 profile 实测：门禁七步全绿、contract-check 5/5、visual 8/8（0.13.1，2026-10-01） |
+| 本地验证 | ✅ file: 安装（未发版期间按部署纪律）+ 重启 profile 实测：门禁五步 + check-deploy FAIL 0 + contract-check 5/5 + visual 8/8（0.13.4，2026-10-29，像素门禁容差已收紧到 0） |
 | 双语文档 | ✅ README.md（中文权威）/ README.en.md（相对链接互切） |
 
 ### npm 收录有延迟，job 绿 ≠ 已在 registry
@@ -30,6 +30,8 @@
 ## 版本历史
 
 > 命名沿革：**0.6.1 起命令/RPC 名由 `health` 统一改为 `compass`**（`/health` → `/compass`、`/session-health-rpc` → `/context-compass-rpc`）；下文早期条目中的 `/health` 为当时命名。
+
+- **0.13.4** — **压缩比例分档标注（t000036）+ 轮次/步数语义（R5）+ 视觉门禁收紧**（2026-10-29，tag → `context-compass-v0.13.4`）：①**压缩比例按两档阈值给措辞强度**（≥50% 提示「早期细节已大量摘要化，依赖早期内容的结论需复核」，≥30% 提示「部分摘要化」，以下只报数字），新增 `compressionRatioMid` / `compressionRatioHigh` 两个 volatile 配置（配置卡字段 18 → 20）。**刻意不升档**（用户裁定）：压缩比例常是容量压力的**结果**，独立计分＝同一事实算两次；且压缩后上下文变小、容量维反而转绿，升档会自相矛盾。②**投影新增 `steps`**（每次 `step/end` 计一步；`turns` 仍按去重 turn 计），`stateVersion` 10 → 11；口径按宿主词汇表（轮次＝用户回合 turn，步数＝一次模型调用 + 其工具执行 step）。徽章浮层、`/compass`、`context_compass` 的 `signals.steps`、交接摘要与一览面板「规模」列统一为「轮次 / 步数 / 消息数」。③**视觉门禁 `maxDiffPixelRatio` 2% → 0**：旧容差会吞掉小面积文案漂移（R5 规模列的 3642px / 1.74% 差异恰好放行，`visual:update` 也不重写基线），同机渲染确定性实测后收紧；panel light 补规模列文本断言。验证：门禁五步全绿、check-deploy FAIL 0、contract-check 5/5、visual 8/8（零容差），实机徽章浮层「1 轮 / 1 步 / 5 条消息」与面板「41轮/96步/839条」
 
 - **0.13.3** — **移除已退役 session-health 技能的来源引用**（2026-10-28，tag → `context-compass-v0.13.3`）：社区 session-health 技能已在 `agent-skills/retired.txt` 退役（不再供安装），本仓方法论不再挂靠它。README/README.en 的「方法论源自该技能」改为直接描述判定模型（容量 + 经济 + 质量 + 消息数四维取最严信号，数据层全部精确测量）；`docs/DESIGN.md` 的来源行改写、信号对比表两列（「技能在 Cursor vs 本插件」）改为「信号 → 来源」表；`src/config.ts` / `src/projection.ts` 注释去掉 skill 指代。**无行为变更**（`src/` 实质代码改动 0 行），发版动因：README 在 npm 包内（`files` 字段含 README.md／README.en.md），不发布则已上架的 README 仍写着已退役的来源；且 `lib/*.d.ts` 带注释，本地 lib 与 registry 副本不一致会让 `check:deploy` 只能靠 `file:` 安装才绿。附带：R4（技能阈值回写）核实为**不成立**——插件侧 schema 默认值与技能判定表逐项一致且自诞生起未分叉，该协作无对端（技能已退役），已 close；技能判表里「压缩比例 30%/50% 两档」在插件中只作展示不参与 severity，另立条目跟进
 
